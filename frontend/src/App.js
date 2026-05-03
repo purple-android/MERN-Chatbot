@@ -14,7 +14,7 @@ function App() {
   return (
     <div>
       <h1>Frontend</h1>
-      <h1>This ain't it bitch</h1>
+      <h1>This is it</h1>
       <p>{message}</p>
     </div>
   );
