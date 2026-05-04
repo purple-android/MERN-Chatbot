@@ -1,6 +1,6 @@
 import React from 'react';
 
-function Sidebar({ conversations, activeId, onNewChat, onOpen, onDelete }) {
+function Sidebar({ conversations, activeId, user, onNewChat, onOpen, onDelete, onLogout }) {
   return (
     <div className="sidebar">
 
@@ -22,7 +22,6 @@ function Sidebar({ conversations, activeId, onNewChat, onOpen, onDelete }) {
             onClick={() => onOpen(conv._id)}
           >
             <span className="chat-title">{conv.title}</span>
-
             <button
               className="delete-btn"
               onClick={(e) => { e.stopPropagation(); onDelete(conv._id); }}
@@ -33,6 +32,19 @@ function Sidebar({ conversations, activeId, onNewChat, onOpen, onDelete }) {
           </div>
         ))}
       </div>
+
+      <div className="sidebar-footer">
+        <div className="user-avatar">
+          {user.username.charAt(0).toUpperCase()}
+        </div>
+
+        <span className="user-name">{user.username}</span>
+
+        <button className="logout-btn" onClick={onLogout} title="Log out">
+          ⎋
+        </button>
+      </div>
+
     </div>
   );
 }

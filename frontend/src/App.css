@@ -461,3 +461,224 @@ body {
   color: #2e2e2e;
   text-align: center;
 }
+
+
+/* ═══════════════════════════════
+   SIDEBAR FOOTER (user info + logout)
+═══════════════════════════════ */
+
+/* The bottom bar of the sidebar — sticks to the bottom */
+.sidebar-footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-top: 1px solid #1f1f1f;
+  /* Push this to the bottom of the sidebar */
+  margin-top: auto;
+}
+
+/* The circular avatar showing the first letter of the username */
+.user-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #1e1a3a;
+  border: 1px solid #3a2a6a;
+  color: #a89cf7;
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Don't let it shrink */
+  flex-shrink: 0;
+}
+
+/* The username text next to the avatar */
+.user-name {
+  font-size: 13px;
+  color: #888;
+  /* Take up remaining space so the logout button goes to the far right */
+  flex: 1;
+  /* Cut off with "..." if the username is too long */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The logout button */
+.logout-btn {
+  background: none;
+  border: none;
+  color: #444;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 4px;
+  border-radius: 5px;
+  transition: color 0.15s, background 0.15s;
+  flex-shrink: 0;
+}
+
+.logout-btn:hover {
+  color: #e05;
+  background: #1a0a0a;
+}
+
+
+/* ═══════════════════════════════
+   AUTH PAGE (login / register)
+═══════════════════════════════ */
+
+/* Full-screen dark background — same as the app */
+.auth-page {
+  height: 100vh;
+  background: #0d0d0d;
+  display: flex;
+  /* Center the card both horizontally and vertically */
+  align-items: center;
+  justify-content: center;
+}
+
+/* The centered card */
+.auth-card {
+  width: 100%;
+  max-width: 400px;
+  background: #111111;
+  border: 1px solid #1f1f1f;
+  border-radius: 16px;
+  padding: 36px 32px;
+  /* Subtle shadow to lift the card off the background */
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
+}
+
+/* Logo area at the top of the card */
+.auth-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 28px;
+}
+
+/* Main heading — "Welcome back" or "Create an account" */
+.auth-title {
+  font-size: 22px;
+  font-weight: 600;
+  color: #f0f0f0;
+  letter-spacing: -0.4px;
+  margin-bottom: 6px;
+}
+
+/* Subtitle below the heading */
+.auth-subtitle {
+  font-size: 13.5px;
+  color: #555;
+  margin-bottom: 28px;
+}
+
+/* The form — stacks fields vertically */
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* One label + input pair */
+.auth-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* The label text above each input */
+.auth-field label {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: #777;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+/* The text input box */
+.auth-field input {
+  background: #0d0d0d;
+  border: 1px solid #252525;
+  border-radius: 8px;
+  padding: 11px 14px;
+  color: #e8e8e8;
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+/* Highlight border when the user clicks into the input */
+.auth-field input:focus {
+  border-color: #7c6af7;
+}
+
+.auth-field input::placeholder {
+  color: #333;
+}
+
+/* Red error message */
+.auth-error {
+  font-size: 13px;
+  color: #e05;
+  background: #1a0505;
+  border: 1px solid #3a1010;
+  border-radius: 6px;
+  padding: 9px 12px;
+}
+
+/* The big submit button */
+.auth-submit-btn {
+  margin-top: 4px;
+  padding: 12px;
+  background: #7c6af7;
+  color: white;
+  border: none;
+  border-radius: 9px;
+  font-size: 14.5px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s, transform 0.1s;
+}
+
+.auth-submit-btn:hover:not(:disabled) {
+  background: #6b59e6;
+  transform: translateY(-1px);
+}
+
+.auth-submit-btn:disabled {
+  background: #2a2a2a;
+  color: #555;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* The "Don't have an account? Register" line at the bottom */
+.auth-switch {
+  margin-top: 20px;
+  text-align: center;
+  font-size: 13px;
+  color: #555;
+}
+
+/* The clickable "Register" / "Log In" text */
+.auth-switch-btn {
+  background: none;
+  border: none;
+  color: #7c6af7;
+  cursor: pointer;
+  font-size: 13px;
+  font-family: inherit;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.auth-switch-btn:hover {
+  color: #a89cf7;
+}

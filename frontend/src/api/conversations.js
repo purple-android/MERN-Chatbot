@@ -1,40 +1,44 @@
-// The base URL for all conversation-related API calls
 const BASE = '/api/conversations';
 
+function getAuthHeader() {
+  const token = localStorage.getItem('token');
+  return { Authorization: `Bearer ${token}` };
+}
 
-// getAllConversations — fetches the list of all conversations (for the sidebar)
 export async function getAllConversations() {
-  const res = await fetch(BASE);
+  const res = await fetch(BASE, {
+    headers: getAuthHeader()
+  });
   return res.json();
 }
 
-
-// getConversation — fetches one full conversation (including all its messages)
 export async function getConversation(id) {
-  const res = await fetch(`${BASE}/${id}`);
+  const res = await fetch(`${BASE}/${id}`, {
+    headers: getAuthHeader()
+  });
   return res.json();
 }
 
-
-// createConversation — creates a brand new empty conversation in the database
 export async function createConversation() {
-  const res = await fetch(BASE, { method: 'POST' });
+  const res = await fetch(BASE, {
+    method: 'POST',
+    headers: getAuthHeader()
+  });
   return res.json();
 }
 
-
-// sendMessage — sends a user message and gets back the AI's reply
 export async function sendMessage(id, content) {
   const res = await fetch(`${BASE}/${id}/message`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
     body: JSON.stringify({ content })
   });
   return res.json();
 }
 
-
-// deleteConversation — permanently deletes a conversation from the database
 export async function deleteConversation(id) {
-  await fetch(`${BASE}/${id}`, { method: 'DELETE' });
+  await fetch(`${BASE}/${id}`, {
+    method: 'DELETE',
+    headers: getAuthHeader()
+  });
 }
