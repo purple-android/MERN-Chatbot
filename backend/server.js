@@ -8,6 +8,7 @@ const dns = require('dns');
 
 const conversationRoutes = require('./routes/conversationRoutes');
 const authRoutes = require('./routes/authRoutes');
+const uploadRoutes = require('./routes/uploadRoutes');
 
 const app = express();
 
@@ -19,7 +20,7 @@ app.use(express.json());
 // Any URL starting with /api/auth goes to authRoutes (login, register, etc.)
 app.use('/api/auth', authRoutes);
 app.use('/api/conversations', conversationRoutes);
-
+app.use('/api/upload', uploadRoutes);
 
 // ── Serve the built React frontend (for production) ──
 app.use(express.static(path.join(__dirname, '..', 'frontend', 'build')));

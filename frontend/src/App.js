@@ -10,7 +10,7 @@ import AuthPage from './components/AuthPage';
 // API functions
 import * as api      from './api/conversations';
 import { getMe }     from './api/auth';
-
+import { uploadDocument } from './api/upload';
 
 function App() {
 
@@ -23,6 +23,10 @@ function App() {
   const [messages,       setMessages]      = useState([]);
   const [input,          setInput]         = useState('');
   const [loading,        setLoading]       = useState(false);
+
+    // ── Document attachment state ──
+  const [attachedDoc, setAttachedDoc] = useState(null);
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     async function checkExistingSession() {
@@ -83,7 +87,7 @@ function App() {
   }
 
   async function sendMessage() {
-    if (!input.trim() || loading || !activeId) return;
+    if ((!input.trim() && !attachedDoc) || loading || !activeId) return;
 
     const userText = input.trim();
     setInput('');
@@ -91,10 +95,23 @@ function App() {
     const textarea = document.querySelector('.input-box textarea');
     if (textarea) textarea.style.height = 'auto';
 
-    setMessages(prev => [...prev, { role: 'user', content: userText }]);
+    const displayText = userText || `📄 ${attachedDoc.filename}`;
+
+    let contentToSend;
+    if (attachedDoc && userText) {
+      contentToSend = `[Document: ${attachedDoc.filename}]\n\n${attachedDoc.text}\n\n---\n\n${userText}`;
+    } else if (attachedDoc && !userText) {
+      contentToSend = `[Document: ${attachedDoc.filename}]\n\n${attachedDoc.text}\n\n---\n\nPlease read the above document and summarize its key points.`;
+    } else {
+      contentToSend = userText;
+    }
+
+    setAttachedDoc(null);
+
+    setMessages(prev => [...prev, { role: 'user', content: displayText }]);
     setLoading(true);
 
-    const data = await api.sendMessage(activeId, userText);
+    const data = await api.sendMessage(activeId, contentToSend);
 
     setLoading(false);
     setMessages(prev => [...prev, { role: 'assistant', content: data.reply }]);
@@ -102,6 +119,28 @@ function App() {
     api.getAllConversations().then(setConversations);
   }
 
+  async function handleFileSelect(e) {
+    const file = e.target.files[0];
+
+    if (!file) return;
+
+    setUploading(true);
+
+    const data = await uploadDocument(file);
+
+    setUploading(false);
+
+    if (data.error) {
+      alert(data.error);
+      return;
+    }
+
+    setAttachedDoc({ filename: data.filename, text: data.text });
+  }
+
+  function handleRemoveAttachment() {
+    setAttachedDoc(null);
+  }
 
   async function deleteConversation(id) {
     await api.deleteConversation(id);
@@ -126,7 +165,6 @@ function App() {
       sendMessage();
     }
   }
-
 
   // ── Render ──
 
@@ -167,6 +205,10 @@ function App() {
               onInputChange={handleInputChange}
               onKeyDown={handleKeyDown}
               onSend={sendMessage}
+              attachedDoc={attachedDoc}
+              uploading={uploading}
+              onFileSelect={handleFileSelect}
+              onRemoveAttachment={handleRemoveAttachment}
             />
           </>
         )}

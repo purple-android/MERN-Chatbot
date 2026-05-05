@@ -320,7 +320,7 @@ body {
   align-items: flex-end;
 }
 
-/* The small "You" / "Claude" label above the message */
+/* The small "You" / "Llama" label above each message */
 .message-sender {
   font-size: 11px;
   font-weight: 600;
@@ -385,11 +385,12 @@ body {
   border-top: 1px solid #181818;
 }
 
-/* The rounded box wrapping the textarea + send button */
+/* The rounded box wrapping the textarea + action buttons */
 .input-box {
   max-width: 740px;
   margin: 0 auto;
   display: flex;
+  /* Row layout: textarea on the left, action buttons on the right */
   align-items: flex-end;
   gap: 8px;
   background: #141414;
@@ -681,4 +682,105 @@ body {
 
 .auth-switch-btn:hover {
   color: #a89cf7;
+}
+
+
+/* ═══════════════════════════════
+   DOCUMENT ATTACHMENT
+═══════════════════════════════ */
+
+/* The pill-shaped badge that appears above the input box when a document is attached */
+.attachment-badge {
+  /* Match the same max-width as the input box so they line up */
+  max-width: 740px;
+  /* Center it horizontally the same way the input box is centered */
+  margin: 0 auto 8px;
+  /* Put the filename and × button side by side */
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* Subtle purple-tinted background to show it's an "active" attachment */
+  background: #1a1a2e;
+  border: 1px solid #2a2a4a;
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-size: 13px;
+  color: #a89cf7;
+}
+
+/* The filename text inside the badge */
+.attachment-badge span {
+  /* Take up all remaining space so the × button stays at the far right */
+  flex: 1;
+  /* If the filename is too long, cut it off with "..." */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The × button inside the attachment badge */
+.attachment-badge .remove-btn {
+  background: none;
+  border: none;
+  /* Muted grey by default */
+  color: #555;
+  cursor: pointer;
+  /* Larger font so the × is easy to click */
+  font-size: 18px;
+  padding: 0 2px;
+  line-height: 1;
+  /* Don't let it shrink when the filename is long */
+  flex-shrink: 0;
+  transition: color 0.15s;
+}
+
+/* Turn the × button red when hovered — signals "this will remove the file" */
+.attachment-badge .remove-btn:hover {
+  color: #e05;
+}
+
+/* The wrapper that holds the paperclip button and the send button together */
+.input-actions {
+  /* Stack them in a row, aligned to the bottom of the textarea */
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  /* Don't let this wrapper shrink when the textarea is wide */
+  flex-shrink: 0;
+}
+
+/* The paperclip button — styled as a small square icon button */
+.attach-btn {
+  width: 34px;
+  height: 34px;
+  /* Use flex to center the emoji inside */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 1px solid #252525;
+  border-radius: 9px;
+  /* Muted grey by default */
+  color: #555;
+  /* pointer cursor so it feels clickable (it's a label, not a button) */
+  cursor: pointer;
+  font-size: 16px;
+  /* Don't shrink when the textarea takes up space */
+  flex-shrink: 0;
+  transition: color 0.15s, border-color 0.15s;
+  /* user-select: none prevents the emoji from being accidentally highlighted on click */
+  user-select: none;
+}
+
+/* Highlight the paperclip button purple on hover — matches the app's accent colour */
+.attach-btn:hover {
+  color: #a89cf7;
+  border-color: #7c6af7;
+}
+
+/* Dim the button while a file is uploading so it looks disabled */
+.attach-btn.uploading {
+  color: #333;
+  border-color: #1e1e1e;
+  cursor: not-allowed;
 }
