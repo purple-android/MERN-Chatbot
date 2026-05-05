@@ -9,6 +9,7 @@ const dns = require('dns');
 const conversationRoutes = require('./routes/conversationRoutes');
 const authRoutes = require('./routes/authRoutes');
 const uploadRoutes = require('./routes/uploadRoutes');
+const transcribeRoutes = require('./routes/transcribeRoutes');
 
 const app = express();
 
@@ -21,6 +22,7 @@ app.use(express.json());
 app.use('/api/auth', authRoutes);
 app.use('/api/conversations', conversationRoutes);
 app.use('/api/upload', uploadRoutes);
+app.use('/api/transcribe', transcribeRoutes);
 
 // ── Serve the built React frontend (for production) ──
 app.use(express.static(path.join(__dirname, '..', 'frontend', 'build')));

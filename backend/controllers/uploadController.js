@@ -83,5 +83,4 @@ const extractText = async (req, res) => {
   }
 };
 
-
 module.exports = { extractText };

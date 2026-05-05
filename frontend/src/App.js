@@ -11,6 +11,7 @@ import AuthPage from './components/AuthPage';
 import * as api      from './api/conversations';
 import { getMe }     from './api/auth';
 import { uploadDocument } from './api/upload';
+import { transcribeAudio } from './api/transcribe';
 
 function App() {
 
@@ -27,6 +28,7 @@ function App() {
     // ── Document attachment state ──
   const [attachedDoc, setAttachedDoc] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
 
   useEffect(() => {
     async function checkExistingSession() {
@@ -142,6 +144,32 @@ function App() {
     setAttachedDoc(null);
   }
 
+  async function handleAudioSelect(e) {
+    const file = e.target.files[0];
+
+    if (!file) return;
+
+    setTranscribing(true);
+
+    const data = await transcribeAudio(file);
+    setTranscribing(false);
+
+    if (data.error) {
+      alert(data.error);
+      return;
+    }
+
+    setInput(data.text);
+
+    setTimeout(() => {
+      const textarea = document.querySelector('.input-box textarea');
+      if (textarea) {
+        textarea.style.height = 'auto';
+        textarea.style.height = textarea.scrollHeight + 'px';
+      }
+    }, 0);
+  }
+
   async function deleteConversation(id) {
     await api.deleteConversation(id);
     setConversations(prev => prev.filter(c => c._id !== id));
@@ -209,6 +237,8 @@ function App() {
               uploading={uploading}
               onFileSelect={handleFileSelect}
               onRemoveAttachment={handleRemoveAttachment}
+              transcribing={transcribing}
+              onAudioSelect={handleAudioSelect} 
             />
           </>
         )}

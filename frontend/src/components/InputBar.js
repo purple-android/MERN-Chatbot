@@ -1,6 +1,6 @@
 import React from 'react';
 
-function InputBar({ input, loading, onInputChange, onKeyDown, onSend, attachedDoc, uploading, onFileSelect, onRemoveAttachment }) {
+function InputBar({ input, loading, onInputChange, onKeyDown, onSend, attachedDoc, uploading, onFileSelect, onRemoveAttachment, transcribing, onAudioSelect }) {
   return (
     <div className="input-area">
 
@@ -20,7 +20,6 @@ function InputBar({ input, loading, onInputChange, onKeyDown, onSend, attachedDo
       )}
 
       <div className="input-box">
-
         <textarea
           value={input}
           onChange={onInputChange}
@@ -30,6 +29,7 @@ function InputBar({ input, loading, onInputChange, onKeyDown, onSend, attachedDo
         />
 
         <div className="input-actions">
+
           <label
             htmlFor="file-upload"
             className={`attach-btn${uploading ? ' uploading' : ''}`}
@@ -48,10 +48,28 @@ function InputBar({ input, loading, onInputChange, onKeyDown, onSend, attachedDo
             disabled={uploading}
           />
 
+          <label
+            htmlFor="audio-upload"
+            className={`audio-btn${transcribing ? ' transcribing' : ''}`}
+            title={transcribing ? 'Transcribing...' : 'Upload audio to transcribe (.mp3, .wav, .m4a...)'}
+          >
+            {transcribing ? '⏳' : '🎙️'}
+          </label>
+
+          <input
+            type="file"
+            id="audio-upload"
+            accept=".mp3,.wav,.m4a,.ogg,.webm,.flac,.mp4"
+            onChange={onAudioSelect}
+            onClick={e => { e.target.value = null; }}
+            style={{ display: 'none' }}
+            disabled={transcribing}
+          />
+
           <button
             className="send-btn"
             onClick={onSend}
-            disabled={loading || uploading || (!input.trim() && !attachedDoc)}
+            disabled={loading || uploading || transcribing || (!input.trim() && !attachedDoc)}
           >
             ↑
           </button>
@@ -59,7 +77,6 @@ function InputBar({ input, loading, onInputChange, onKeyDown, onSend, attachedDo
       </div>
 
       <p className="disclaimer">
-        Llama can make mistakes. Verify important information.
       </p>
     </div>
   );
