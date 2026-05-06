@@ -784,3 +784,43 @@ body {
   border-color: #1e1e1e;
   cursor: not-allowed;
 }
+
+
+/* ═══════════════════════════════
+   AUDIO / MIC BUTTON
+═══════════════════════════════ */
+
+/* The microphone button — same shape as the paperclip button but green-tinted on hover */
+.audio-btn {
+  width: 34px;
+  height: 34px;
+  /* Use flex to center the emoji inside the button */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 1px solid #252525;
+  border-radius: 9px;
+  /* Muted grey by default — same as the paperclip */
+  color: #555;
+  /* pointer cursor so it feels clickable (it is a label, not a button) */
+  cursor: pointer;
+  font-size: 16px;
+  flex-shrink: 0;
+  transition: color 0.15s, border-color 0.15s;
+  /* Prevent the emoji from being accidentally highlighted when clicked */
+  user-select: none;
+}
+
+/* Green tint on hover — different from the paperclip's purple so users can tell them apart */
+.audio-btn:hover {
+  color: #4caf80;
+  border-color: #2e7d52;
+}
+
+/* Dim the button while audio is being transcribed so it looks disabled */
+.audio-btn.transcribing {
+  color: #333;
+  border-color: #1e1e1e;
+  cursor: not-allowed;
+}

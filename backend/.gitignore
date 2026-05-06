@@ -2,6 +2,8 @@
 
 # dependencies
 node_modules
+whisper-bin
+*.traineddata
 /.pnp
 .pnp.js
 
@@ -15,7 +17,6 @@ node_modules
 .DS_Store
 build
 .env
-*.traineddata
 /backend/.env
 /backend/uploads
 .env.local

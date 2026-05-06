@@ -159,6 +159,10 @@ function App() {
       return;
     }
 
+    if (data.source) {
+      console.log(`[Whisper] Transcribed using: ${data.source === 'local' ? '💻 Local Whisper (your laptop)' : '☁️  Groq API'}`);
+    }
+
     setInput(data.text);
 
     setTimeout(() => {
