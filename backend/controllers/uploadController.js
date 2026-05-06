@@ -16,8 +16,10 @@ const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
 // Tell pdfjs-dist NOT to use a web worker — workers are a browser concept
 // In Node.js we just run everything in the same process, so we set this to empty string
 pdfjsLib.GlobalWorkerOptions.workerSrc = '';
-const { createCanvas } = require('canvas');
-const Tesseract = require('tesseract.js');
+const { createCanvas } = process.platform === 'win32'
+  ? require('canvas')
+  : require('@napi-rs/canvas');
+  const Tesseract = require('tesseract.js');
 const mammoth = require('mammoth');
 const WordExtractor = require('word-extractor');
 
