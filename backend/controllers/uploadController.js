@@ -97,7 +97,14 @@ const extractText = async (req, res) => {
 
       if (text.length < 50) {
         console.log('pdf-parse found little text — switching to OCR for image-based PDF');
-        text = await extractTextWithOCR(req.file.buffer);
+        try {
+          text = await extractTextWithOCR(req.file.buffer);
+        } catch (ocrErr) {
+          console.log('[OCR] OCR failed — system graphics libraries likely missing:', ocrErr.message);
+          return res.status(400).json({
+            error: 'This PDF contains images instead of selectable text. OCR could not run on the server. Try a PDF where you can select and copy the text.'
+          });
+        }
       }
 
     } else if (ext === '.docx') {
