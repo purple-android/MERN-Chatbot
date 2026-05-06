@@ -32,10 +32,23 @@ async function transcribeLocally(buffer, ext) {
 
     fs.writeFileSync(tempInput, buffer);
 
-    const ffmpegCmd = `"${FFMPEG_EXE}" -i "${tempInput}" -ar 16000 -ac 1 -y "${tempWav}"`;
-    await runCommand(ffmpegCmd, os.tmpdir());
+    let wavBuffer;
+    let audioFilename = `audio${ext}`;
 
-    const wavBuffer = fs.readFileSync(tempWav);
+    try {
+      const ffmpegCmd = `"${FFMPEG_EXE}" -i "${tempInput}" -ar 16000 -ac 1 -y "${tempWav}"`;
+      await runCommand(ffmpegCmd, os.tmpdir());
+      wavBuffer     = fs.readFileSync(tempWav);
+      audioFilename = 'audio.wav';   // conversion succeeded — tell the server it's a WAV
+      console.log('[Whisper] ffmpeg conversion succeeded');
+    } catch (ffmpegErr) {
+      // ffmpeg is not installed or failed — send the original audio file as-is
+      // whisper-server will handle it if it's a supported format (mp3, wav, ogg, flac)
+      // for unsupported formats (m4a, webm, mp4) the server will return an error,
+      // which the caller catches and falls back to Groq
+      console.log('[Whisper] ffmpeg not available — sending raw audio to whisper-server');
+      wavBuffer = buffer;
+    }
 
     const healthCheck = new AbortController();
     const healthTimer = setTimeout(() => healthCheck.abort(), 3000);
@@ -47,7 +60,7 @@ async function transcribeLocally(buffer, ext) {
 
     const blob = new Blob([wavBuffer], { type: 'audio/wav' });
     const formData = new FormData();
-    formData.append('file', blob, 'audio.wav');
+    formData.append('file', blob, audioFilename);
 
     const transcribeController = new AbortController();
     const transcribeTimer = setTimeout(() => transcribeController.abort(), 600000);
