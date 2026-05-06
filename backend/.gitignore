@@ -15,6 +15,7 @@ node_modules
 .DS_Store
 build
 .env
+*.traineddata
 /backend/.env
 /backend/uploads
 .env.local
