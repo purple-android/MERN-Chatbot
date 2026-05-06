@@ -1,0 +1,9 @@
+# .dockerignore
+# Tells Docker which folders/files to skip when copying your project into the container.
+# Works exactly like .gitignore but for Docker builds.
+
+node_modules      # Skip node_modules — Docker runs npm install itself inside the container
+whisper-bin       # Skip whisper-bin — Windows .exe files won't run on Linux anyway
+.env              # Skip .env — secrets are set via Render's environment variables, not this file
+uploads           # Skip any leftover uploads folder
+*.traineddata     # Skip Tesseract language data — it downloads fresh on first use
