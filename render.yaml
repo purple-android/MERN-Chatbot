@@ -5,7 +5,7 @@
 
 services:
   - type: web
-    name: MERN-Chatbot     # ← replace this with your exact service name from Render's dashboard
+    name: MERN-Chatbot-1     # ← replace this with your exact service name from Render's dashboard
     env: node
     packages:
       - build-essential              # C++ build tools — needed to compile native modules
