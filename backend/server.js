@@ -1,3 +1,10 @@
+// Polyfill: make sure the global 'crypto' object is available
+// Some packages (mongoose, jsonwebtoken etc.) use crypto as a global without requiring it
+// This line sets it up manually if it isn't already defined by the Node.js runtime
+if (typeof globalThis.crypto === 'undefined') {
+  globalThis.crypto = require('crypto').webcrypto;
+}
+
 require('dotenv').config();
 
 const express = require('express');

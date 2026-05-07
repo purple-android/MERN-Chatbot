@@ -3,9 +3,9 @@
 # The Express backend runs the server AND serves the built React frontend as static files.
 
 # ── Base image ──
-# node:18-bullseye = Node.js 18 on Debian Bullseye (a stable Linux version)
+# node:20-bullseye = Node.js 20 on Debian Bullseye (a stable Linux version)
 # This gives us Node.js pre-installed and a full Linux environment to work in
-FROM node:18-bullseye
+FROM node:20-bullseye
 
 # ── Install system libraries ──
 # These are Linux-level packages (not npm packages) required by the 'canvas' npm package
