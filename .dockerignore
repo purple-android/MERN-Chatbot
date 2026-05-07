@@ -1,0 +1,25 @@
+# .dockerignore
+# Tells Docker which files and folders to skip when copying your project into the container.
+# Works exactly like .gitignore but for Docker builds.
+# Skipping these makes the build faster and prevents secrets from leaking into the image.
+
+# Skip node_modules — Docker runs npm install itself inside the container
+# Copying node_modules from your laptop would cause problems (wrong platform binaries)
+backend/node_modules
+frontend/node_modules
+
+# Skip the whisper-bin folder — it contains Windows .exe files that won't run on Linux
+backend/whisper-bin
+
+# Skip .env — secrets are set via Railway's environment variables, not this file
+backend/.env
+.env
+
+# Skip any leftover uploads folder
+backend/uploads
+
+# Skip Tesseract language data — it downloads fresh on first use
+*.traineddata
+
+# Skip an existing frontend build — Docker will create a fresh one during the build
+frontend/build
