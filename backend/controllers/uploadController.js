@@ -10,73 +10,57 @@
 
 // Load the built-in 'path' module — used to read file extensions like ".pdf"
 const path = require('path');
-const pdfParse = require('pdf-parse');
-const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
 
-// Tell pdfjs-dist NOT to use a web worker — workers are a browser concept
-// In Node.js we just run everything in the same process, so we set this to empty string
-pdfjsLib.GlobalWorkerOptions.workerSrc = '';
-const { createCanvas } = process.platform === 'win32'
-  ? require('canvas')
-  : require('@napi-rs/canvas');
-  const Tesseract = require('tesseract.js');
+// Load pdf-parse — reads text that is ALREADY embedded in a PDF as selectable text
+// NOTE: We must use version 1.1.1 — newer versions changed the API and break
+const pdfParse = require('pdf-parse');
+
+// Note: mupdf is loaded with dynamic import() inside extractTextWithOCR below.
+// It cannot be loaded with require() at the top of the file because mupdf is an ESM module
+// (a modern JavaScript format) and our project uses CommonJS (require).
+// Dynamic import() bridges the two — it works fine inside async functions.
+
+// Load tesseract.js — an OCR (Optical Character Recognition) library
+// OCR = the ability to look at an image and read the text visible in it
+// It downloads English language data on first use (requires internet, cached after that)
+const Tesseract = require('tesseract.js');
+
+// Load mammoth — a library that reads .docx Word document bytes and extracts plain text
 const mammoth = require('mammoth');
+
+// Load word-extractor — a library that reads the old .doc binary format and extracts plain text
+// The old .doc format (Word 97–2003) is a complex binary file that mammoth cannot read
+// word-extractor handles all the binary parsing internally so we don't have to
 const WordExtractor = require('word-extractor');
 
-
-// ── NodeCanvasFactory ──
-const NodeCanvasFactory = {
-
-  create(width, height) {
-    const canvas = createCanvas(width, height);
-    const context = canvas.getContext('2d');
-    return { canvas, context };
-  },
-
-  reset(canvasAndContext, width, height) {
-    canvasAndContext.canvas.width  = width;
-    canvasAndContext.canvas.height = height;
-  },
-
-  destroy(canvasAndContext) {
-    if (process.platform === 'win32') {
-      canvasAndContext.canvas.width  = 0;
-      canvasAndContext.canvas.height = 0;
-    }
-  }
-};
+// ── extractTextWithOCR ──
 
 async function extractTextWithOCR(buffer) {
-  const pdf = await pdfjsLib.getDocument({
-    data: new Uint8Array(buffer),
-    disableFontFace: true,
-  }).promise;
+
+  // Load mupdf using dynamic import — this is needed because mupdf is an ESM module
+  // import() returns a Promise, so we await it to get the actual mupdf object
+  const mupdf = await import('mupdf');
+
+  const doc = mupdf.Document.openDocument(new Uint8Array(buffer), 'application/pdf');
 
   let fullText = '';
 
-  for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+  for (let i = 0; i < doc.countPages(); i++) {
 
-    const page = await pdf.getPage(pageNum);
+    const page = doc.loadPage(i);
 
-    const viewport = page.getViewport({ scale: 1.5 });
+    const pixmap = page.toPixmap(
+      [1.5, 0, 0, 1.5, 0, 0],
+      mupdf.ColorSpace.DeviceRGB
+    );
 
-    const { canvas, context } = NodeCanvasFactory.create(viewport.width, viewport.height);
-
-    await page.render({
-      canvasContext: context,    // the drawing tool we created above
-      viewport:      viewport,   // the size/scale to render at
-      canvasFactory: NodeCanvasFactory  // our custom canvas creator, so pdfjs uses @napi-rs/canvas
-    }).promise;
-
-    const imageBuffer = canvas.toBuffer('image/png');
+    const imageBuffer = Buffer.from(pixmap.asPNG());
 
     const { data: { text } } = await Tesseract.recognize(imageBuffer, 'eng', {
       logger: () => {}
     });
 
     fullText += text + '\n';
-
-    NodeCanvasFactory.destroy({ canvas, context });
   }
 
   return fullText.trim();
@@ -96,17 +80,20 @@ const extractText = async (req, res) => {
       text = req.file.buffer.toString('utf-8');
 
     } else if (ext === '.pdf') {
+
+      // ── PDF: two-step extraction ──
       const result = await pdfParse(req.file.buffer);
       text = result.text.trim();
 
       if (text.length < 50) {
         console.log('pdf-parse found little text — switching to OCR for image-based PDF');
+
         try {
           text = await extractTextWithOCR(req.file.buffer);
         } catch (ocrErr) {
-          console.log('[OCR] OCR failed — system graphics libraries likely missing:', ocrErr.message);
+          console.log('[OCR] OCR failed:', ocrErr.message);
           return res.status(400).json({
-            error: 'This PDF contains images instead of selectable text. OCR could not run on the server. Try a PDF where you can select and copy the text.'
+            error: 'This PDF contains images instead of selectable text and OCR failed. Try a PDF where you can select and copy the text.'
           });
         }
       }
