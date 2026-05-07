@@ -1,14 +1,27 @@
-import React from 'react';
+// InputBar.js
+// This component is the typing area at the bottom of the screen.
+// It contains the textarea, the paperclip button (with submenu), the mic button, and send.
 
-function InputBar({ input, loading, onInputChange, onKeyDown, onSend, attachedDoc, uploading, onFileSelect, onRemoveAttachment, transcribing, onAudioSelect }) {
+import React, { useRef } from 'react';
+
+// ── InputBar Component ──
+function InputBar({
+  input, loading, onInputChange, onKeyDown, onSend,
+  attachedDoc, uploading,
+  onAttachClick, attachMenuOpen, onAttachClose, onDocSelect, onAudioFileSelect,
+  onRemoveAttachment,
+  transcribing, recording, onMicClick
+}) {
+
+  const docInputRef   = useRef(null);
+  const audioInputRef = useRef(null);
+
   return (
     <div className="input-area">
 
       {attachedDoc && (
         <div className="attachment-badge">
-
           <span>📄 {attachedDoc.filename}</span>
-
           <button
             className="remove-btn"
             onClick={onRemoveAttachment}
@@ -20,6 +33,7 @@ function InputBar({ input, loading, onInputChange, onKeyDown, onSend, attachedDo
       )}
 
       <div className="input-box">
+
         <textarea
           value={input}
           onChange={onInputChange}
@@ -30,53 +44,93 @@ function InputBar({ input, loading, onInputChange, onKeyDown, onSend, attachedDo
 
         <div className="input-actions">
 
-          <label
-            htmlFor="file-upload"
-            className={`attach-btn${uploading ? ' uploading' : ''}`}
-            title={uploading ? 'Uploading...' : 'Attach a document (.txt, .pdf, .docx)'}
-          >
-            {uploading ? '⏳' : '📎'}
-          </label>
+          <div className="attach-btn-wrapper">
+
+            <button
+              className={`attach-btn${uploading ? ' uploading' : ''}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                onAttachClick();
+              }}
+              disabled={uploading}
+              title={uploading ? 'Uploading...' : 'Attach a file'}
+            >
+              {uploading ? '⏳' : '📎'}
+            </button>
+
+            {attachMenuOpen && (
+              <div className="attach-menu" onClick={(e) => e.stopPropagation()}>
+
+                <button
+                  className="attach-menu-item"
+                  onClick={() => {
+                    docInputRef.current.click();
+                    onAttachClose();
+                  }}
+                >
+                  📄 Document
+                </button>
+
+                <button
+                  className="attach-menu-item"
+                  onClick={() => {
+                    audioInputRef.current.click();
+                    onAttachClose();
+                  }}
+                >
+                  🎵 Audio file
+                </button>
+
+              </div>
+            )}
+          </div>
 
           <input
+            ref={docInputRef}
             type="file"
-            id="file-upload"
             accept=".txt,.pdf,.doc,.docx"
-            onChange={onFileSelect}
+            onChange={onDocSelect}
             onClick={e => { e.target.value = null; }}
             style={{ display: 'none' }}
             disabled={uploading}
           />
 
-          <label
-            htmlFor="audio-upload"
-            className={`audio-btn${transcribing ? ' transcribing' : ''}`}
-            title={transcribing ? 'Transcribing...' : 'Upload audio to transcribe (.mp3, .wav, .m4a...)'}
-          >
-            {transcribing ? '⏳' : '🎙️'}
-          </label>
-
           <input
+            ref={audioInputRef}
             type="file"
-            id="audio-upload"
             accept=".mp3,.wav,.m4a,.ogg,.webm,.flac,.mp4"
-            onChange={onAudioSelect}
+            onChange={onAudioFileSelect}
             onClick={e => { e.target.value = null; }}
             style={{ display: 'none' }}
             disabled={transcribing}
           />
 
           <button
+            className={`audio-btn${recording ? ' recording' : ''}${transcribing ? ' transcribing' : ''}`}
+            onClick={onMicClick}
+            disabled={transcribing || loading}
+            title={
+              transcribing ? 'Transcribing...' :
+              recording    ? 'Click to stop recording' :
+                             'Click to record audio'
+            }
+          >
+            {transcribing ? '⏳' : recording ? '⏹️' : '🎙️'}
+          </button>
+
+          <button
             className="send-btn"
             onClick={onSend}
-            disabled={loading || uploading || transcribing || (!input.trim() && !attachedDoc)}
+            disabled={loading || uploading || transcribing || recording || (!input.trim() && !attachedDoc)}
           >
             ↑
           </button>
+
         </div>
       </div>
 
       <p className="disclaimer">
+        Llama can make mistakes. Verify important information.
       </p>
     </div>
   );

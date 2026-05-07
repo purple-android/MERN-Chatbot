@@ -824,3 +824,66 @@ body {
   border-color: #1e1e1e;
   cursor: not-allowed;
 }
+
+/* Red pulsing state — shown while the mic is actively recording */
+.audio-btn.recording {
+  color: #e05;
+  border-color: #e05;
+  /* Pulsing glow animation so the user clearly sees they're being recorded */
+  animation: mic-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes mic-pulse {
+  0%,  100% { box-shadow: 0 0 0 0   rgba(238, 0, 85, 0.5); }
+  50%        { box-shadow: 0 0 0 6px rgba(238, 0, 85, 0);   }
+}
+
+
+/* ═══════════════════════════════
+   PAPERCLIP SUBMENU
+═══════════════════════════════ */
+
+/* Wrapper around the paperclip button — needed so the submenu can be
+   positioned relative to the button rather than the whole page */
+.attach-btn-wrapper {
+  position: relative;
+  flex-shrink: 0;
+}
+
+/* The popup that appears above the paperclip button when clicked */
+.attach-menu {
+  /* Sit just above the button — 100% means the full height of the wrapper, +8px gap */
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  /* Dark card matching the app's colour scheme */
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 10px;
+  padding: 5px;
+  min-width: 150px;
+  /* Sit on top of everything else */
+  z-index: 100;
+  /* Subtle shadow to lift it off the background */
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+}
+
+/* Each option row inside the submenu (Document / Audio file) */
+.attach-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 13.5px;
+  color: #aaa;
+  /* user-select: none stops the text from getting highlighted on click */
+  user-select: none;
+  transition: background 0.12s, color 0.12s;
+}
+
+.attach-menu-item:hover {
+  background: #242424;
+  color: #e8e8e8;
+}

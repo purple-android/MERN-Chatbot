@@ -1,35 +1,48 @@
-import { useState, useEffect } from 'react';
+// App.js — the root of the whole app
+// Its only job is to hold all shared state and decide what to show on screen:
+// either the login/register page (if not logged in) or the full chat UI (if logged in)
+
+import { useState, useEffect, useRef } from 'react';
 import './App.css';
 
-// UI components
-import Sidebar  from './components/Sidebar';
-import ChatArea from './components/ChatArea';
-import InputBar from './components/InputBar';
-import AuthPage from './components/AuthPage';
+// Import the four UI components we built — each one draws one section of the screen
+import Sidebar  from './components/Sidebar';   // Left panel: logo, conversation list, user info
+import ChatArea from './components/ChatArea';   // Middle: scrollable message bubbles
+import InputBar from './components/InputBar';   // Bottom: textarea + send button
+import AuthPage from './components/AuthPage';   // Full-screen login / register form
 
-// API functions
-import * as api      from './api/conversations';
-import { getMe }     from './api/auth';
+// APIs
+import * as api from './api/conversations';
+import { getMe } from './api/auth';
 import { uploadDocument } from './api/upload';
 import { transcribeAudio } from './api/transcribe';
 
+
+// ── App Component — the main function that builds the whole app ──
 function App() {
 
-  const [user, setUser]   = useState(null);
+  // ── Auth state ──
+  const [user, setUser] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
 
   // ── Chat state ──
   const [conversations, setConversations] = useState([]);
-  const [activeId,       setActiveId]      = useState(null);
-  const [messages,       setMessages]      = useState([]);
-  const [input,          setInput]         = useState('');
-  const [loading,        setLoading]       = useState(false);
-
-    // ── Document attachment state ──
+  const [activeId, setActiveId] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  
+  // ── Document attachment state ──
   const [attachedDoc, setAttachedDoc] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [attachMenuOpen, setAttachMenuOpen] = useState(false);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
 
+
+  // ── On app startup: check if the user is already logged in ──
   useEffect(() => {
     async function checkExistingSession() {
       const token = localStorage.getItem('token');
@@ -51,19 +64,30 @@ function App() {
   }, []);
 
 
+  // ── Close the paperclip submenu when the user clicks anywhere outside it ──
+  useEffect(() => {
+    if (!attachMenuOpen) return;
+    function closeMenu() { setAttachMenuOpen(false); }
+    document.addEventListener('click', closeMenu);
+    return () => document.removeEventListener('click', closeMenu);
+  }, [attachMenuOpen]);
+
+  // ── Load conversations whenever the logged-in user changes ──
   useEffect(() => {
     if (user) {
       api.getAllConversations().then(setConversations);
     }
   }, [user]);
 
-
+  // ── handleLogin — called by AuthPage after a successful login or register ──
+  // token    — the JWT string returned by the backend
+  // userData — the user object { _id, username, email }
   function handleLogin(token, userData) {
     localStorage.setItem('token', token);
     setUser(userData);
   }
 
-
+  // ── handleLogout — logs the user out and resets everything to a blank state ──
   function handleLogout() {
     localStorage.removeItem('token');
     setUser(null);
@@ -73,13 +97,15 @@ function App() {
     setInput('');
   }
 
-
+  // ── openConversation — opens a specific chat and loads its messages ──
+  // id — the MongoDB _id of the conversation to open
   async function openConversation(id) {
     setActiveId(id);
     const data = await api.getConversation(id);
     setMessages(data.messages);
   }
 
+  // ── newChat — creates a brand new empty conversation in the database ──
   async function newChat() {
     const data = await api.createConversation();
     setConversations(prev => [data, ...prev]);
@@ -88,6 +114,7 @@ function App() {
     setInput('');
   }
 
+  // ── sendMessage — sends the user's message and adds Llama's reply to the screen ──
   async function sendMessage() {
     if ((!input.trim() && !attachedDoc) || loading || !activeId) return;
 
@@ -97,8 +124,10 @@ function App() {
     const textarea = document.querySelector('.input-box textarea');
     if (textarea) textarea.style.height = 'auto';
 
+    // ── Build what to DISPLAY in the chat bubble ──
     const displayText = userText || `📄 ${attachedDoc.filename}`;
 
+    // ── Build what to actually SEND to the AI ──
     let contentToSend;
     if (attachedDoc && userText) {
       contentToSend = `[Document: ${attachedDoc.filename}]\n\n${attachedDoc.text}\n\n---\n\n${userText}`;
@@ -109,7 +138,6 @@ function App() {
     }
 
     setAttachedDoc(null);
-
     setMessages(prev => [...prev, { role: 'user', content: displayText }]);
     setLoading(true);
 
@@ -121,15 +149,18 @@ function App() {
     api.getAllConversations().then(setConversations);
   }
 
-  async function handleFileSelect(e) {
-    const file = e.target.files[0];
+  // ── handleAttachClick — toggles the paperclip submenu open and closed ──
+  function handleAttachClick() {
+    setAttachMenuOpen(prev => !prev);
+  }
 
+  // ── handleDocSelect — called when the user picks a document from the paperclip submenu ──
+  async function handleDocSelect(e) {
+    const file = e.target.files[0];
     if (!file) return;
 
     setUploading(true);
-
     const data = await uploadDocument(file);
-
     setUploading(false);
 
     if (data.error) {
@@ -140,17 +171,14 @@ function App() {
     setAttachedDoc({ filename: data.filename, text: data.text });
   }
 
-  function handleRemoveAttachment() {
-    setAttachedDoc(null);
-  }
 
-  async function handleAudioSelect(e) {
+  // ── handleAudioFileSelect — called when the user picks an audio file from the paperclip submenu ──
+  // Routes the file to /api/transcribe (not /api/upload like documents)
+  async function handleAudioFileSelect(e) {
     const file = e.target.files[0];
-
     if (!file) return;
 
     setTranscribing(true);
-
     const data = await transcribeAudio(file);
     setTranscribing(false);
 
@@ -174,6 +202,93 @@ function App() {
     }, 0);
   }
 
+
+  // ── handleRemoveAttachment — removes the attached document without sending it ──
+  function handleRemoveAttachment() {
+    setAttachedDoc(null);
+  }
+
+
+  // ── handleMicClick — starts recording when clicked, stops recording when clicked again ──
+  async function handleMicClick() {
+
+    // ── If already recording: stop ──
+    if (recording) {
+      // Calling .stop() triggers the 'onstop' event defined below, which handles the rest
+      mediaRecorderRef.current.stop();
+      return;
+    }
+
+    // ── If not recording: start ──
+    try {
+
+      // Ask the browser for microphone permission
+      // This shows the "Allow microphone" popup — if the user clicks Block we go to catch below
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      // Create a MediaRecorder from the mic stream — it handles the actual audio capturing
+      const mediaRecorder = new MediaRecorder(stream);
+
+      // Save it to our ref so the stop-click can reach it
+      mediaRecorderRef.current = mediaRecorder;
+
+      // Clear any leftover chunks from a previous recording
+      audioChunksRef.current = [];
+
+      // ── ondataavailable — fires repeatedly while recording ──
+      // MediaRecorder doesn't give us one big file — it sends pieces (chunks) over time
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+
+      // ── onstop — fires when .stop() is called ──
+      // This is where we assemble the audio, send it to the backend, and put text in the box
+      mediaRecorder.onstop = async () => {
+
+        stream.getTracks().forEach(track => track.stop());
+
+        setRecording(false);
+        setTranscribing(true);
+
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+
+        const audioFile = new File([audioBlob], 'recording.webm', { type: 'audio/webm' });
+
+        const data = await transcribeAudio(audioFile);
+
+        setTranscribing(false);
+
+        if (data.error) {
+          alert(data.error);
+          return;
+        }
+
+        if (data.source) {
+          console.log(`[Whisper] Transcribed using: ${data.source === 'local' ? '💻 Local Whisper (your laptop)' : '☁️  Groq API'}`);
+        }
+
+        setInput(data.text);
+
+        setTimeout(() => {
+          const textarea = document.querySelector('.input-box textarea');
+          if (textarea) {
+            textarea.style.height = 'auto';
+            textarea.style.height = textarea.scrollHeight + 'px';
+          }
+        }, 0);
+      };
+
+      mediaRecorder.start();
+
+      setRecording(true);
+
+    } catch (err) {
+      alert('Could not access microphone. Please allow microphone permission in your browser.');
+    }
+  }
+
+  // ── deleteConversation — permanently removes a conversation from the database ──
+  // id — the MongoDB _id of the conversation to delete
   async function deleteConversation(id) {
     await api.deleteConversation(id);
     setConversations(prev => prev.filter(c => c._id !== id));
@@ -183,14 +298,15 @@ function App() {
     }
   }
 
-  // ── handleInputChange — updates input and resizes the textarea ──
+  // ── handleInputChange — updates the input state and auto-resizes the textarea ──
+  // e — the browser event object, which contains info about what was typed
   function handleInputChange(e) {
     setInput(e.target.value);
     e.target.style.height = 'auto';
     e.target.style.height = e.target.scrollHeight + 'px';
   }
 
-  // ── handleKeyDown — Enter sends the message, Shift+Enter adds a new line ──
+  // ── handleKeyDown — sends the message when Enter is pressed ──
   function handleKeyDown(e) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -198,15 +314,10 @@ function App() {
     }
   }
 
-  // ── Render ──
-
-  // Still checking localStorage — show nothing to avoid a flash of the login screen
   if (!authChecked) return null;
 
-  // Not logged in — show the auth page (login / register)
   if (!user) return <AuthPage onLogin={handleLogin} />;
 
-  // Logged in — show the full chat UI
   return (
     <div className="app">
 
@@ -221,7 +332,9 @@ function App() {
       />
 
       <div className="main">
+
         {!activeId ? (
+          // ── Welcome screen ──
           <div className="welcome">
             <div className="welcome-icon">✦</div>
             <h1>Hi, {user.username} 👋</h1>
@@ -229,8 +342,14 @@ function App() {
             <button className="start-btn" onClick={newChat}>Start chatting</button>
           </div>
         ) : (
+          // ── Chat view — shown when a conversation is open ──
+          // <> </> is a React Fragment — it lets us return two elements without a wrapper div
           <>
-            <ChatArea messages={messages} loading={loading} />
+            <ChatArea
+              messages={messages}
+              loading={loading}
+            />
+
             <InputBar
               input={input}
               loading={loading}
@@ -239,10 +358,15 @@ function App() {
               onSend={sendMessage}
               attachedDoc={attachedDoc}
               uploading={uploading}
-              onFileSelect={handleFileSelect}
+              onAttachClick={handleAttachClick}
+              attachMenuOpen={attachMenuOpen}
+              onAttachClose={() => setAttachMenuOpen(false)}
+              onDocSelect={handleDocSelect}
+              onAudioFileSelect={handleAudioFileSelect}
               onRemoveAttachment={handleRemoveAttachment}
               transcribing={transcribing}
-              onAudioSelect={handleAudioSelect} 
+              recording={recording}
+              onMicClick={handleMicClick}
             />
           </>
         )}
