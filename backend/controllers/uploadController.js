@@ -39,8 +39,10 @@ const NodeCanvasFactory = {
   },
 
   destroy(canvasAndContext) {
-    canvasAndContext.canvas.width  = 0;
-    canvasAndContext.canvas.height = 0;
+    if (process.platform === 'win32') {
+      canvasAndContext.canvas.width  = 0;
+      canvasAndContext.canvas.height = 0;
+    }
   }
 };
 
