@@ -141,9 +141,29 @@ function App() {
     setMessages(prev => [...prev, { role: 'user', content: displayText }]);
     setLoading(true);
 
-    const data = await api.sendMessage(activeId, contentToSend);
+    // Send the full content (including document text if any) to the backend
+    // We wrap in try-catch so a network failure (Wi-Fi drops, server down, etc.)
+    // shows an error bubble instead of silently crashing
+    let data;
+    try {
+      data = await api.sendMessage(activeId, contentToSend);
+    } catch (err) {
+      // Network-level failure (could not even reach the server)
+      setLoading(false);
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: '⚠️ Could not reach the server. Please check your connection and try again.'
+      }]);
+      return;
+    }
 
     setLoading(false);
+
+    if (data.error) {
+      setMessages(prev => [...prev, { role: 'assistant', content: `⚠️ ${data.error}` }]);
+      return;
+    }
+    
     setMessages(prev => [...prev, { role: 'assistant', content: data.reply }]);
 
     api.getAllConversations().then(setConversations);

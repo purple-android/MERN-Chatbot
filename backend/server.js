@@ -30,6 +30,16 @@ app.use('/api/conversations', conversationRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/transcribe', transcribeRoutes);
 
+app.use((err, req, res, next) => {
+  if (err.status === 413 || err.type === 'entity.too.large') {
+    return res.status(413).json({
+      error: 'Your message is too large to send. Try using a shorter document.'
+    });
+  }
+  // For any other Express-level error, pass it along
+  next(err);
+});
+
 // ── Serve the built React frontend (for production) ──
 app.use(express.static(path.join(__dirname, '..', 'frontend', 'build')));
 
