@@ -1,12 +1,13 @@
 import React from 'react';
 
-function Sidebar({ conversations, activeId, user, onNewChat, onOpen, onDelete, onLogout }) {
+function Sidebar({ conversations, activeId, user, onNewChat, onOpen, onDelete, onLogout, isOpen, onClose }) {
   return (
-    <div className="sidebar">
+    <div className={`sidebar${isOpen ? ' open' : ''}`}>
 
       <div className="sidebar-header">
         <span className="logo-dot" />
         <span className="app-name">Llama Chat</span>
+        <button className="sidebar-close-btn" onClick={onClose}>×</button>
       </div>
 
       <button className="new-chat-btn" onClick={onNewChat}>

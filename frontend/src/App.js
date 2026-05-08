@@ -38,6 +38,7 @@ function App() {
   const [transcribing, setTranscribing] = useState(false);
   const [recording, setRecording] = useState(false);
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
 
@@ -103,6 +104,7 @@ function App() {
     setActiveId(id);
     const data = await api.getConversation(id);
     setMessages(data.messages);
+    setSidebarOpen(false);
   }
 
   // ── newChat — creates a brand new empty conversation in the database ──
@@ -341,6 +343,11 @@ function App() {
   return (
     <div className="app">
 
+      <div
+        className={`sidebar-overlay${sidebarOpen ? ' visible' : ''}`}
+        onClick={() => setSidebarOpen(false)}
+      />
+
       <Sidebar
         conversations={conversations}
         activeId={activeId}
@@ -349,9 +356,22 @@ function App() {
         onOpen={openConversation}
         onDelete={deleteConversation}
         onLogout={handleLogout}
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
       />
 
       <div className="main">
+
+        <div className="mobile-header">
+          <button
+            className="hamburger-btn"
+            onClick={() => setSidebarOpen(true)}
+            title="Open menu"
+          >
+            ☰
+          </button>
+          <span className="mobile-app-title">Llama Chat</span>
+        </div>
 
         {!activeId ? (
           // ── Welcome screen ──
