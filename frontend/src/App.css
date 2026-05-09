@@ -978,7 +978,7 @@ body {
    640px wide or smaller (phones).
 ═══════════════════════════════ */
 
-@media (max-width: 640px) {
+@media (max-width: 768px) {
 
   /* Show the mobile header bar at the top */
   .mobile-header {

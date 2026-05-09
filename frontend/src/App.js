@@ -114,6 +114,7 @@ function App() {
     setActiveId(data._id);
     setMessages([]);
     setInput('');
+    setSidebarOpen(false);
   }
 
   // ── sendMessage — sends the user's message and adds Llama's reply to the screen ──
