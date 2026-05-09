@@ -27,6 +27,16 @@ body {
   overflow: hidden;
 }
 
+/* ── dvh fix for mobile browsers ──
+   On mobile, 100vh includes the browser address bar which can cause the
+   bottom of the app to be hidden behind it.
+   100dvh (dynamic viewport height) adjusts automatically when the address
+   bar appears or disappears. We only apply it where supported. */
+@supports (height: 100dvh) {
+  body { height: 100dvh; }
+  .app  { height: 100dvh; }
+}
+
 
 /* ═══════════════════════════════
    SIDEBAR
@@ -459,7 +469,8 @@ body {
   max-width: 740px;
   margin: 8px auto 0;
   font-size: 11.5px;
-  color: #2e2e2e;
+  /* Lightened from #2e2e2e — was nearly invisible on the dark background */
+  color: #555;
   text-align: center;
 }
 
@@ -1034,10 +1045,27 @@ body {
     font-size: 14px;
   }
 
-  /* Tighter input area padding on mobile */
+  /* Tighter input area padding on mobile.
+     env(safe-area-inset-bottom) adds extra padding on iPhones with a home
+     bar (iPhone X and later) so the input bar isn't hidden behind it.
+     max() picks whichever value is larger — at least 14px, more if needed. */
   .input-area {
-    padding: 8px 12px 14px;
+    padding: 8px 12px max(14px, env(safe-area-inset-bottom));
   }
+
+  /* Larger tap targets for the action buttons.
+     Apple and Google both recommend at least 44×44px for touch targets.
+     Our buttons were 34×34px which is too small for reliable tapping. */
+  .send-btn,
+  .attach-btn,
+  .audio-btn,
+  .hamburger-btn {
+    width: 44px;
+    height: 44px;
+  }
+
+  /* Keep the font size inside the send button centred after resize */
+  .send-btn { font-size: 18px; }
 
   /* Auth card fills the screen width with a small margin on each side */
   .auth-card {
@@ -1045,8 +1073,13 @@ body {
     padding: 28px 20px;
   }
 
-  /* Smaller welcome heading on mobile */
+  /* Slightly smaller welcome heading on mobile */
   .welcome h1 {
     font-size: 22px;
+  }
+
+  /* Keep message text readable — 15px instead of the 14px override */
+  .message-text {
+    font-size: 15px;
   }
 }
