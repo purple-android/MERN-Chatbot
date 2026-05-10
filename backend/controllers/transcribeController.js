@@ -2,52 +2,60 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { exec } = require('child_process');
-const Groq = require('groq-sdk');
+const { promisify } = require('util');
 
+const execAsync = promisify(exec);
+
+const Groq = require('groq-sdk');
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
+// ── WHISPER_BIN ──
 const WHISPER_BIN = path.join(__dirname, '..', 'whisper-bin');
+
 const FFMPEG_EXE = process.platform === 'win32'
   ? path.join(WHISPER_BIN, 'ffmpeg.exe')
   : 'ffmpeg';
 
-function runCommand(command, cwd) {
-  return new Promise((resolve, reject) => {
-    exec(command, { cwd, timeout: 30000 }, (error, stdout, stderr) => {
-      if (error) { reject(error); return; }
-      resolve(stdout.trim());
-    });
-  });
+async function runCommand(command) {
+  const { stdout } = await execAsync(command, { timeout: 30000 });
+  return stdout.trim();
 }
 
+
+// ── transcribeLocally ──
 async function transcribeLocally(buffer, ext) {
 
+  // ── Temporary file paths ──
   let tempInput = null;
   let tempWav   = null;
 
   try {
-
     tempInput = path.join(os.tmpdir(), `whisper_in_${Date.now()}${ext}`);
     tempWav   = path.join(os.tmpdir(), `whisper_wav_${Date.now()}.wav`);
 
     fs.writeFileSync(tempInput, buffer);
 
-    let wavBuffer;
-    let audioFilename = `audio${ext}`;
+    let audioToSend    = buffer;
+    let audioFilename  = `audio${ext}`;
 
     try {
+      // ── Build the ffmpeg command ──
+      // Breaking it down:
+      //   "${FFMPEG_EXE}"        — path to ffmpeg.exe (or just "ffmpeg" on Linux)
+      //   -i "${tempInput}"      — input file: the audio we uploaded
+      //   -ar 16000              — audio rate: set to 16,000 Hz (16 kHz)
+      //   -ac 1                  — audio channels: set to 1 (mono, not stereo)
+      //   -y                     — yes: overwrite output file if it already exists
+      //   "${tempWav}"           — output file: save the converted audio here
       const ffmpegCmd = `"${FFMPEG_EXE}" -i "${tempInput}" -ar 16000 -ac 1 -y "${tempWav}"`;
-      await runCommand(ffmpegCmd, os.tmpdir());
-      wavBuffer     = fs.readFileSync(tempWav);
-      audioFilename = 'audio.wav';   // conversion succeeded — tell the server it's a WAV
+
+      await runCommand(ffmpegCmd);
+      audioToSend   = fs.readFileSync(tempWav);
+      audioFilename = 'audio.wav';   // tell the server it's a WAV file now
       console.log('[Whisper] ffmpeg conversion succeeded');
+
     } catch (ffmpegErr) {
-      // ffmpeg is not installed or failed — send the original audio file as-is
-      // whisper-server will handle it if it's a supported format (mp3, wav, ogg, flac)
-      // for unsupported formats (m4a, webm, mp4) the server will return an error,
-      // which the caller catches and falls back to Groq
       console.log('[Whisper] ffmpeg not available — sending raw audio to whisper-server');
-      wavBuffer = buffer;
     }
 
     const healthCheck = new AbortController();
@@ -58,18 +66,19 @@ async function transcribeLocally(buffer, ext) {
       clearTimeout(healthTimer);
     }
 
-    const blob = new Blob([wavBuffer], { type: 'audio/wav' });
+    const blob = new Blob([audioToSend], { type: 'audio/wav' });
+
     const formData = new FormData();
     formData.append('file', blob, audioFilename);
 
-    const transcribeController = new AbortController();
-    const transcribeTimer = setTimeout(() => transcribeController.abort(), 600000);
+    const transcribeAbort = new AbortController();
+    const transcribeTimer = setTimeout(() => transcribeAbort.abort(), 600000);
 
     try {
       const response = await fetch(`${process.env.LOCAL_WHISPER_URL}/inference`, {
         method: 'POST',
-        body: formData,
-        signal: transcribeController.signal
+        body:   formData,
+        signal: transcribeAbort.signal
       });
 
       if (!response.ok) throw new Error(`Whisper server returned status ${response.status}`);
@@ -88,6 +97,7 @@ async function transcribeLocally(buffer, ext) {
   }
 }
 
+// ── transcribeWithGroq ──
 async function transcribeWithGroq(buffer, ext) {
 
   let tempPath = null;
@@ -99,8 +109,11 @@ async function transcribeWithGroq(buffer, ext) {
     fs.writeFileSync(tempPath, buffer);
 
     const transcription = await groq.audio.transcriptions.create({
-      file:            fs.createReadStream(tempPath),
-      model:           'whisper-large-v3',
+
+      file: fs.createReadStream(tempPath),
+
+      model: 'whisper-large-v3',
+
       response_format: 'json',
     });
 
@@ -114,7 +127,6 @@ async function transcribeWithGroq(buffer, ext) {
 // ── transcribeAudio ──
 const transcribeAudio = async (req, res) => {
   try {
-
     if (!req.file) return res.status(400).json({ error: 'No audio file was uploaded' });
 
     const ext = path.extname(req.file.originalname).toLowerCase();

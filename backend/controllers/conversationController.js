@@ -2,9 +2,9 @@ const Conversation = require('../models/Conversation');
 const Groq = require('groq-sdk');
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-const MAX_MESSAGE_LENGTH = 15000; // almost 4000 tokens
+const MAX_MESSAGE_LENGTH = 1500; // almost 400 tokens
 const TOKEN_BUDGET = 7500;
-const AI_TIMEOUT_MS = 30000; // 30 seconds
+const AI_TIMEOUT_MS = 300000; // 300 seconds or 5 minutes
 
 
 // ── getAllConversations ──
@@ -72,21 +72,26 @@ const sendMessage = async (req, res) => {
       conversation.title = content.slice(0, 50);
     }
 
+    const lastIndex = conversation.messages.length - 1;
+    const currentMsgTokens = Math.ceil(conversation.messages[lastIndex].content.length / 4);
+    const historyBudget = Math.max(0, TOKEN_BUDGET - currentMsgTokens);
+    
     let tokenCount = 0;
-    let start = conversation.messages.length - 1;
+    let start = lastIndex - 1; // start from the second-to-last message
 
     while (start >= 0) {
       const effectiveLength = Math.min(conversation.messages[start].content.length, MAX_MESSAGE_LENGTH);
       const msgTokens = Math.ceil(effectiveLength / 4);
-      if (tokenCount + msgTokens > TOKEN_BUDGET) break;
+      if (tokenCount + msgTokens > historyBudget) break;
       tokenCount += msgTokens;
       start--;
     }
 
     const recentMessages = conversation.messages.slice(start + 1);
+    const lastMsgIndex = recentMessages.length - 1;
 
-    const messagesForAI = recentMessages.map(m => {
-      if (m.content.length > MAX_MESSAGE_LENGTH) {
+    const messagesForAI = recentMessages.map((m, i) => {
+      if (i < lastMsgIndex && m.content.length > MAX_MESSAGE_LENGTH) {
         return {
           role:    m.role,
           content: m.content.slice(0, MAX_MESSAGE_LENGTH) +
