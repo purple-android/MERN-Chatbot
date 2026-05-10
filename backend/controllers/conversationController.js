@@ -3,8 +3,8 @@ const Groq = require('groq-sdk');
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const MAX_MESSAGE_LENGTH = 1500; // almost 400 tokens
-const TOKEN_BUDGET = 7500;
-const AI_TIMEOUT_MS = 300000; // 300 seconds or 5 minutes
+const TOKEN_BUDGET = 1500;
+const AI_TIMEOUT_MS = 600000; // 600 seconds or 10 minutes
 
 
 // ── getAllConversations ──
