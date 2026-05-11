@@ -37,7 +37,6 @@ function App() {
   const [uploading, setUploading] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const [recording, setRecording] = useState(false);
-  const [summarizing, setSummarizing] = useState(false);
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const mediaRecorderRef = useRef(null);
@@ -144,11 +143,7 @@ function App() {
       ]);
       userBubbleAlreadyShown = true;
 
-      setSummarizing(true);
-
       const summaryResult = await summarizeDocument(docForThisMessage.text);
-
-      setSummarizing(false);
 
       if (summaryResult.error) {
         setMessages(prev => {
@@ -273,22 +268,6 @@ function App() {
   // ── handleRemoveAttachment — removes the attached document without sending it ──
   function handleRemoveAttachment() {
     setAttachedDoc(null);
-  }
-
-  async function handleSummarize() {
-
-    if (!attachedDoc) return;
-    setSummarizing(true);
-    const data = await summarizeDocument(attachedDoc.text);
-
-    setSummarizing(false);
-
-    if (data.error) {
-      alert('Summarization failed: ' + data.error);
-      return;
-    }
-
-    setAttachedDoc({ ...attachedDoc, text: data.summary });
   }
 
   // ── handleMicClick — starts recording when clicked, stops recording when clicked again ──
@@ -464,8 +443,6 @@ function App() {
               onDocSelect={handleDocSelect}
               onAudioFileSelect={handleAudioFileSelect}
               onRemoveAttachment={handleRemoveAttachment}
-              summarizing={summarizing}
-              onSummarize={handleSummarize}
               transcribing={transcribing}
               recording={recording}
               onMicClick={handleMicClick}
