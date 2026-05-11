@@ -9,8 +9,8 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct';
 const DAILY_REQUEST_LIMIT = 1000;       // 1,000 requests per day
 const DAILY_TOKEN_LIMIT   = 500000;     // 500,000 tokens per day
-const CHUNK_SIZE = 80000;
-const MAX_CHUNK_SUMMARY_TOKENS = 1500;
+const CHUNK_SIZE = 80000;               // 80,000 characters ≈ 20,000 tokens (1 token ≈ 4 characters).
+const MAX_CHUNK_SUMMARY_TOKENS = 1500;  // 1,500 tokens ≈ 1,100 words
 const MAX_FINAL_SUMMARY_TOKENS = 8000; // 8,000 tokens ≈ 6,000 words
 const CHUNK_DELAY_MS = 60000; // 60 seconds or 1 minute
 const AI_TIMEOUT_MS = 600000; // 10 minutes per individual API call
@@ -70,6 +70,10 @@ const summarizeDocument = async (req, res) => {
 
         chunkData = data;
 
+        // ── Log token usage and rate limits for this chunk request ──
+        // data.usage tells us exactly how many tokens this one request used.
+        // The HTTP response headers tell us how much per-minute budget is left.
+        // Daily counters are NOT in the headers — Groq only provides per-minute info.
         const u = data.usage;
         const remReq   = httpResp.headers.get('x-ratelimit-remaining-requests');
         const limReq   = httpResp.headers.get('x-ratelimit-limit-requests');
@@ -145,6 +149,8 @@ const summarizeDocument = async (req, res) => {
 
         finalData = data;
 
+        // ── Log token usage and rate limits for the FINAL combining request ──
+        // Same format as the per-chunk block, just labelled differently so it's easy to spot.
         const u = data.usage;
         const remReq   = httpResp.headers.get('x-ratelimit-remaining-requests');
         const limReq   = httpResp.headers.get('x-ratelimit-limit-requests');

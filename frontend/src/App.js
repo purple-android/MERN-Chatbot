@@ -121,11 +121,13 @@ function App() {
   async function sendMessage() {
     if ((!input.trim() && !attachedDoc) || loading || !activeId) return;
 
-    const userText = input.trim();
+    let userText = input.trim();
     setInput('');
 
     const textarea = document.querySelector('.input-box textarea');
     if (textarea) textarea.style.height = 'auto';
+
+    setLoading(true);
 
     // ── Build what to DISPLAY in the chat bubble ──
     const displayText = userText || `📄 ${attachedDoc.filename}`;
@@ -134,31 +136,60 @@ function App() {
 
     let userBubbleAlreadyShown = false;
 
-    if (docForThisMessage && docForThisMessage.text.length > 80000) {
+    const docNeedsSummary      = docForThisMessage && docForThisMessage.text.length >= 80000;
+    const userTextNeedsSummary = userText.length >= 80000;
+
+    if (docNeedsSummary || userTextNeedsSummary) {
 
       setMessages(prev => [
         ...prev,
         { role: 'user', content: displayText },
-        { role: 'assistant', content: '⏳ Your document is large, so I am summarizing it first before answering. Long documents can take several minutes — please wait...' }
-      ]);
+        { role: 'assistant', content: '⏳ Summarizing your input first because it is very large. This can take several minutes for very long content — please wait...' }      ]);
       userBubbleAlreadyShown = true;
 
-      const summaryResult = await summarizeDocument(docForThisMessage.text);
+    if (docNeedsSummary) {
+      const docSummaryResult = await summarizeDocument(docForThisMessage.text);
+      
+      if (docSummaryResult.error) {
+          setMessages(prev => {
+            const updated = [...prev];
+            updated[updated.length - 1] = {
+              role: 'assistant',
+              content: `⚠️ Could not summarize the document: ${docSummaryResult.error}`
+            };
+            return updated;
+          });
+          setAttachedDoc(null);
+          setLoading(false); // re-enable the buttons so the user can try again
+          return;
+        }
 
-      if (summaryResult.error) {
-        setMessages(prev => {
-          const updated = [...prev];
-          updated[updated.length - 1] = {
-            role: 'assistant',
-            content: `⚠️ Could not summarize the document: ${summaryResult.error}`
-          };
-          return updated;
-        });
-        setAttachedDoc(null);
-        return;
+        // Success — replace the document's text with the much shorter summary.
+        // The spread operator (...) copies the existing filename and overrides only the text.
+        docForThisMessage = { ...docForThisMessage, text: docSummaryResult.summary };
+
       }
 
-      docForThisMessage = { ...docForThisMessage, text: summaryResult.summary };
+      if (userTextNeedsSummary) {
+        const userTextSummaryResult = await summarizeDocument(userText);
+
+        if (userTextSummaryResult.error) {
+          setMessages(prev => {
+            const updated = [...prev];
+            updated[updated.length - 1] = {
+              role: 'assistant',
+              content: `⚠️ Could not summarize your message: ${userTextSummaryResult.error}`
+            };
+            return updated;
+          });
+          setAttachedDoc(null);
+          setLoading(false);
+          return;
+        }
+
+        // Replace the typed text with its summary (this is why userText was declared with 'let')
+        userText = userTextSummaryResult.summary;
+      }
 
       setMessages(prev => prev.slice(0, -1));
     }
@@ -181,8 +212,6 @@ function App() {
       setMessages(prev => [...prev, { role: 'user', content: displayText }]);
     }    
     
-    setLoading(true);
-
     // Send the full content (including document text if any) to the backend
     // We wrap in try-catch so a network failure (Wi-Fi drops, server down, etc.)
     // shows an error bubble instead of silently crashing

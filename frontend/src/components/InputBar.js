@@ -53,8 +53,8 @@ function InputBar({
                 e.stopPropagation();
                 onAttachClick();
               }}
-              disabled={uploading}
-              title={uploading ? 'Uploading...' : 'Attach a file'}
+              disabled={uploading || loading}
+              title={uploading ? 'Uploading...' : loading ? 'Please wait...' : 'Attach a file'}
             >
               {uploading ? '⏳' : '📎'}
             </button>
