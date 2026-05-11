@@ -2,8 +2,13 @@ const Conversation = require('../models/Conversation');
 const Groq = require('groq-sdk');
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-const MAX_MESSAGE_LENGTH = 1500; // almost 400 tokens
-const TOKEN_BUDGET = 1500;
+const MAX_MESSAGE_LENGTH = 1500;
+const MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct';
+const DAILY_REQUEST_LIMIT = 1000;       // 1,000 requests per day on the free tier
+const DAILY_TOKEN_LIMIT   = 500000;     // 500,000 tokens per day on the free tier
+const MAX_HISTORY_MESSAGES = 10;
+const MAX_HISTORY_MESSAGE_LENGTH = 6000;  // almost 1500 tokens
+const MAX_CURRENT_MESSAGE_LENGTH = 80000;  // almost 20000 tokens
 const AI_TIMEOUT_MS = 600000; // 600 seconds or 10 minutes
 
 
@@ -73,53 +78,75 @@ const sendMessage = async (req, res) => {
     }
 
     const lastIndex = conversation.messages.length - 1;
-    const currentMsgTokens = Math.ceil(conversation.messages[lastIndex].content.length / 4);
-    const historyBudget = Math.max(0, TOKEN_BUDGET - currentMsgTokens);
+    const historyMessages = conversation.messages.slice(
+      Math.max(0, lastIndex - MAX_HISTORY_MESSAGES),
+      lastIndex
+    );
     
-    let tokenCount = 0;
-    let start = lastIndex - 1; // start from the second-to-last message
-
-    while (start >= 0) {
-      const effectiveLength = Math.min(conversation.messages[start].content.length, MAX_MESSAGE_LENGTH);
-      const msgTokens = Math.ceil(effectiveLength / 4);
-      if (tokenCount + msgTokens > historyBudget) break;
-      tokenCount += msgTokens;
-      start--;
-    }
-
-    const recentMessages = conversation.messages.slice(start + 1);
-    const lastMsgIndex = recentMessages.length - 1;
-
-    const messagesForAI = recentMessages.map((m, i) => {
-      if (i < lastMsgIndex && m.content.length > MAX_MESSAGE_LENGTH) {
+    const historyForAI = historyMessages.map(m => {
+      // Check if the message exceeds the character cap
+      if (m.content.length > MAX_HISTORY_MESSAGE_LENGTH) {
         return {
           role:    m.role,
-          content: m.content.slice(0, MAX_MESSAGE_LENGTH) +
-                   '\n\n[Note: the document was trimmed because it was too long.]'
+                    content: m.content.slice(0, MAX_HISTORY_MESSAGE_LENGTH) +
+                   '\n\n[Note: this message was trimmed because it was too long.]'
         };
       }
       return { role: m.role, content: m.content };
     });
 
+    const currentMsg = conversation.messages[lastIndex];
+    const currentForAI = {
+      role: currentMsg.role,
+      content: currentMsg.content.length > MAX_CURRENT_MESSAGE_LENGTH
+        ? currentMsg.content.slice(0, MAX_CURRENT_MESSAGE_LENGTH) +
+          '\n\n[Note: your document was trimmed because it exceeded the limit. ' +
+          'Use the Summarize button on the attachment badge to shrink large documents before sending.]'
+        : currentMsg.content
+    };
+
+    const messagesForAI = [...historyForAI, currentForAI];
+
     // ── Call the Groq AI with a timeout ──
     const controller = new AbortController();
     const timeoutTimer = setTimeout(() => controller.abort(), AI_TIMEOUT_MS);
 
-    let aiResponse;
+    let aiData;
     try {
-      aiResponse = await groq.chat.completions.create(
+      const { data, response: httpResp } = await groq.chat.completions.create(
         {
-          model:      'llama-3.3-70b-versatile',
-          max_tokens: 1024,
+          model:      MODEL,
+          max_tokens: 2048,
           messages:   messagesForAI
         },
         { signal: controller.signal }
-      );
+      ).withResponse();
+      
+      aiData = data;
+
+      const u = data.usage;
+      
+      const remReq   = httpResp.headers.get('x-ratelimit-remaining-requests');
+      const limReq   = httpResp.headers.get('x-ratelimit-limit-requests');
+      const remTok   = httpResp.headers.get('x-ratelimit-remaining-tokens');
+      const limTok   = httpResp.headers.get('x-ratelimit-limit-tokens');
+      const resetReq = httpResp.headers.get('x-ratelimit-reset-requests');
+      const resetTok = httpResp.headers.get('x-ratelimit-reset-tokens');
+
+      console.log('[Chat] ───── Request stats ─────');
+      console.log(`[Chat] Token usage    — prompt: ${u?.prompt_tokens} | completion: ${u?.completion_tokens} | total: ${u?.total_tokens} tokens`);
+      console.log(`[Chat] Per-minute RPM — ${remReq}/${limReq} requests left (resets in ${resetReq})`);
+      console.log(`[Chat] Per-minute TPM — ${remTok}/${limTok} tokens left (resets in ${resetTok})`);
+      // Daily counters are NOT exposed in Groq response headers — we show the plan limits
+      // instead, with a hint about where to see live daily usage.
+      console.log(`[Chat] Per-day limit  — ${DAILY_REQUEST_LIMIT.toLocaleString()} requests/day | ${DAILY_TOKEN_LIMIT.toLocaleString()} tokens/day (live daily usage: https://console.groq.com/usage)`);
+      console.log('[Chat] ─────────────────────────');
+  
     } finally {
       clearTimeout(timeoutTimer);
     }
 
-    const aiText = aiResponse.choices[0].message.content;
+    const aiText = aiData.choices[0].message.content;
 
     conversation.messages.push({ role: 'assistant', content: aiText });
 
@@ -133,8 +160,7 @@ const sendMessage = async (req, res) => {
     // ── Timeout: AI took too long ──
     if (err.name === 'AbortError') {
       return res.status(408).json({
-        error: 'The AI took too long to respond. This can happen with very large documents. Please try again or use a shorter document.'
-      });
+        error: 'The AI took longer than 10 minutes to respond. Please try again or use the Summarize button to shorten your document before sending.'      });
     }
 
     if (err.status === 429) {

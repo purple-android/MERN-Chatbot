@@ -17,6 +17,7 @@ const conversationRoutes = require('./routes/conversationRoutes');
 const authRoutes = require('./routes/authRoutes');
 const uploadRoutes = require('./routes/uploadRoutes');
 const transcribeRoutes = require('./routes/transcribeRoutes');
+const summarizeRoutes = require('./routes/summarizeRoutes');
 
 const app = express();
 
@@ -29,6 +30,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/conversations', conversationRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/transcribe', transcribeRoutes);
+app.use('/api/summarize', summarizeRoutes);
 
 app.use((err, req, res, next) => {
   if (err.status === 413 || err.type === 'entity.too.large') {

@@ -750,6 +750,44 @@ body {
   color: #e05;
 }
 
+/* ── Summarize button inside the attachment badge ──
+   This button only appears when the uploaded document is large (over 5000 characters).
+   It lets the user shrink the document into a short AI-generated summary
+   before sending it, so the AI's context window limit is not exceeded. */
+.attachment-badge .summarize-btn {
+  /* No default button background or border — we style it ourselves */
+  background: none;
+  /* A soft purple border that matches the app's colour scheme */
+  border: 1px solid #6c5ce7;
+  /* Rounded corners so it looks like a pill/tag */
+  border-radius: 6px;
+  /* Purple text to match the border */
+  color: #a89cf7;
+  cursor: pointer;
+  /* Slightly smaller than body text so it fits neatly in the badge */
+  font-size: 12px;
+  /* Compact padding — just enough breathing room inside the button */
+  padding: 2px 8px;
+  /* Don't let the button shrink when the filename is long */
+  flex-shrink: 0;
+  /* Smooth colour transition on hover */
+  transition: background 0.15s, color 0.15s;
+}
+
+/* Highlight the Summarize button when hovered — shows it is clickable */
+.attachment-badge .summarize-btn:hover:not(:disabled) {
+  /* Fill with the same purple used elsewhere in the app */
+  background: #6c5ce7;
+  /* White text so it's readable on the purple background */
+  color: #fff;
+}
+
+/* Grey out the Summarize button while it is busy (disabled state) */
+.attachment-badge .summarize-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* The wrapper that holds the paperclip button and the send button together */
 .input-actions {
   /* Stack them in a row, aligned to the bottom of the textarea */

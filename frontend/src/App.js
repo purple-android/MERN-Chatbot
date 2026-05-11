@@ -16,7 +16,7 @@ import * as api from './api/conversations';
 import { getMe } from './api/auth';
 import { uploadDocument } from './api/upload';
 import { transcribeAudio } from './api/transcribe';
-
+import { summarizeDocument } from './api/summarize';
 
 // ── App Component — the main function that builds the whole app ──
 function App() {
@@ -37,6 +37,7 @@ function App() {
   const [uploading, setUploading] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const [recording, setRecording] = useState(false);
+  const [summarizing, setSummarizing] = useState(false);
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const mediaRecorderRef = useRef(null);
@@ -130,18 +131,61 @@ function App() {
     // ── Build what to DISPLAY in the chat bubble ──
     const displayText = userText || `📄 ${attachedDoc.filename}`;
 
+    let docForThisMessage = attachedDoc;
+
+    let userBubbleAlreadyShown = false;
+
+    if (docForThisMessage && docForThisMessage.text.length > 80000) {
+
+      setMessages(prev => [
+        ...prev,
+        { role: 'user', content: displayText },
+        { role: 'assistant', content: '⏳ Your document is large, so I am summarizing it first before answering. Long documents can take several minutes — please wait...' }
+      ]);
+      userBubbleAlreadyShown = true;
+
+      setSummarizing(true);
+
+      const summaryResult = await summarizeDocument(docForThisMessage.text);
+
+      setSummarizing(false);
+
+      if (summaryResult.error) {
+        setMessages(prev => {
+          const updated = [...prev];
+          updated[updated.length - 1] = {
+            role: 'assistant',
+            content: `⚠️ Could not summarize the document: ${summaryResult.error}`
+          };
+          return updated;
+        });
+        setAttachedDoc(null);
+        return;
+      }
+
+      docForThisMessage = { ...docForThisMessage, text: summaryResult.summary };
+
+      setMessages(prev => prev.slice(0, -1));
+    }
+
     // ── Build what to actually SEND to the AI ──
     let contentToSend;
-    if (attachedDoc && userText) {
-      contentToSend = `[Document: ${attachedDoc.filename}]\n\n${attachedDoc.text}\n\n---\n\n${userText}`;
-    } else if (attachedDoc && !userText) {
-      contentToSend = `[Document: ${attachedDoc.filename}]\n\n${attachedDoc.text}\n\n---\n\nPlease read the above document and summarize its key points.`;
+    if (docForThisMessage && userText) {
+      // Document (or its summary) + typed question
+      contentToSend = `[Document: ${docForThisMessage.filename}]\n\n${docForThisMessage.text}\n\n---\n\n${userText}`;
+    } else if (docForThisMessage && !userText) {
+      // Document (or its summary) with no question — ask the AI to summarize/explain it
+      contentToSend = `[Document: ${docForThisMessage.filename}]\n\n${docForThisMessage.text}\n\n---\n\nPlease read the above and explain its key points.`;
     } else {
       contentToSend = userText;
     }
 
     setAttachedDoc(null);
-    setMessages(prev => [...prev, { role: 'user', content: displayText }]);
+    
+    if (!userBubbleAlreadyShown) {
+      setMessages(prev => [...prev, { role: 'user', content: displayText }]);
+    }    
+    
     setLoading(true);
 
     // Send the full content (including document text if any) to the backend
@@ -231,6 +275,21 @@ function App() {
     setAttachedDoc(null);
   }
 
+  async function handleSummarize() {
+
+    if (!attachedDoc) return;
+    setSummarizing(true);
+    const data = await summarizeDocument(attachedDoc.text);
+
+    setSummarizing(false);
+
+    if (data.error) {
+      alert('Summarization failed: ' + data.error);
+      return;
+    }
+
+    setAttachedDoc({ ...attachedDoc, text: data.summary });
+  }
 
   // ── handleMicClick — starts recording when clicked, stops recording when clicked again ──
   async function handleMicClick() {
@@ -405,6 +464,8 @@ function App() {
               onDocSelect={handleDocSelect}
               onAudioFileSelect={handleAudioFileSelect}
               onRemoveAttachment={handleRemoveAttachment}
+              summarizing={summarizing}
+              onSummarize={handleSummarize}
               transcribing={transcribing}
               recording={recording}
               onMicClick={handleMicClick}

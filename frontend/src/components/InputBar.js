@@ -9,6 +9,7 @@ function InputBar({
   input, loading, onInputChange, onKeyDown, onSend,
   attachedDoc, uploading,
   onAttachClick, attachMenuOpen, onAttachClose, onDocSelect, onAudioFileSelect,
+  summarizing, onSummarize,
   onRemoveAttachment,
   transcribing, recording, onMicClick
 }) {
@@ -22,6 +23,20 @@ function InputBar({
       {attachedDoc && (
         <div className="attachment-badge">
           <span>📄 {attachedDoc.filename}</span>
+
+           {attachedDoc.text.length > 80000 && (
+            <button
+              className="summarize-btn"
+              onClick={onSummarize}
+              disabled={summarizing || loading}
+              title="Document is large — click to summarize it before sending"
+            >
+              {/* Show different text depending on whether summarization is in progress */}
+              {/* The ternary operator (condition ? valueIfTrue : valueIfFalse) is BUILT-IN JavaScript */}
+              {summarizing ? '⏳ Summarizing...' : '✨ Summarize'}
+            </button>
+          )}
+
           <button
             className="remove-btn"
             onClick={onRemoveAttachment}
