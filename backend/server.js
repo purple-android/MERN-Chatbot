@@ -19,6 +19,8 @@ const uploadRoutes = require('./routes/uploadRoutes');
 const transcribeRoutes = require('./routes/transcribeRoutes');
 const summarizeRoutes = require('./routes/summarizeRoutes');
 
+const { loadEmbedder } = require('./controllers/ragController');
+
 const app = express();
 
 app.use(cors());
@@ -54,8 +56,16 @@ dns.setServers(['8.8.8.8', '1.1.1.1']);
 
 // ── Start the server ──
 mongoose.connect(process.env.MONGO_URI)
-  .then(() => {
+  .then(async () => {
     console.log('Connected to MongoDB');
+
+    try {
+      await loadEmbedder();
+    } catch (embedderErr) {
+      console.error('[RAG] Embedder failed to load:', embedderErr.message);
+      console.error('[RAG] Server will still start, but Library / RAG features will not work until this is fixed.');
+    }
+    
     app.listen(process.env.PORT || 4000, () => {
       console.log('Server running on port', process.env.PORT || 4000);
     });
