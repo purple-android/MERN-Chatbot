@@ -18,6 +18,7 @@ const authRoutes = require('./routes/authRoutes');
 const uploadRoutes = require('./routes/uploadRoutes');
 const transcribeRoutes = require('./routes/transcribeRoutes');
 const summarizeRoutes = require('./routes/summarizeRoutes');
+const libraryRoutes = require('./routes/libraryRoutes');
 
 const { loadEmbedder } = require('./controllers/ragController');
 
@@ -33,6 +34,7 @@ app.use('/api/conversations', conversationRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/transcribe', transcribeRoutes);
 app.use('/api/summarize', summarizeRoutes);
+app.use('/api/library', libraryRoutes);
 
 app.use((err, req, res, next) => {
   if (err.status === 413 || err.type === 'entity.too.large') {
