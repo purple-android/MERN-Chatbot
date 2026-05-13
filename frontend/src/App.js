@@ -38,6 +38,23 @@ function App() {
   const [uploading, setUploading] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const [recording, setRecording] = useState(false);
+
+  const [useLibrary, setUseLibrary] = useState(() => {
+    const saved = localStorage.getItem('useLibrary');
+    // localStorage stores strings. 'false' is the only value that means OFF —
+    // everything else (including missing) means ON (the default).
+    return saved !== 'false';
+  });
+
+  // ── handleToggleLibrary — flips the library on/off ──
+  function handleToggleLibrary() {
+    setUseLibrary(prev => {
+      const next = !prev;
+      localStorage.setItem('useLibrary', next ? 'true' : 'false');
+      return next;
+    });
+  }
+
   const [currentView, setCurrentView] = useState('chat');
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -231,7 +248,7 @@ function App() {
     // shows an error bubble instead of silently crashing
     let data;
     try {
-      data = await api.sendMessage(activeId, contentToSend);
+      data = await api.sendMessage(activeId, contentToSend, useLibrary);
     } catch (err) {
       // Network-level failure (could not even reach the server)
       setLoading(false);
@@ -249,8 +266,12 @@ function App() {
       return;
     }
     
-    setMessages(prev => [...prev, { role: 'assistant', content: data.reply }]);
-
+    setMessages(prev => [...prev, {
+      role:    'assistant',
+      content: data.reply,
+      sources: data.sources || []
+    }]);
+    
     api.getAllConversations().then(setConversations);
   }
 
@@ -493,6 +514,8 @@ function App() {
               transcribing={transcribing}
               recording={recording}
               onMicClick={handleMicClick}
+              useLibrary={useLibrary}                          // Whether RAG / library search is currently ON
+              onToggleLibrary={handleToggleLibrary}            // Flips the library toggle            
             />
           </>
         )}

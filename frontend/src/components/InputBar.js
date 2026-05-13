@@ -10,7 +10,8 @@ function InputBar({
   attachedDoc, uploading,
   onAttachClick, attachMenuOpen, onAttachClose, onDocSelect, onAudioFileSelect,
   onRemoveAttachment,
-  transcribing, recording, onMicClick
+  transcribing, recording, onMicClick,
+  useLibrary, onToggleLibrary
 }) {
 
   const docInputRef   = useRef(null);
@@ -44,6 +45,17 @@ function InputBar({
         />
 
         <div className="input-actions">
+
+          <button
+            className={`library-toggle-btn${useLibrary ? ' on' : ' off'}`}
+            onClick={onToggleLibrary}
+            disabled={loading || uploading}
+            title={useLibrary
+              ? 'Library is ON — click to turn off (skip RAG, chat with LLM only)'
+              : 'Library is OFF — click to turn on (search your uploaded files)'}
+          >
+            📚
+          </button>
 
           <div className="attach-btn-wrapper">
 

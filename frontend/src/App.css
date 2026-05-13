@@ -1086,6 +1086,85 @@ body {
 
 
 /* ═══════════════════════════════
+   LIBRARY TOGGLE BUTTON — Phase 4 (on/off toggle)
+   Small 📚 button next to the paperclip in the input bar. Lets the user
+   turn RAG search on or off for the next message.
+═══════════════════════════════ */
+
+.library-toggle-btn {
+  background: transparent;
+  border: 1px solid #2a2a2a;
+  border-radius: 8px;
+  cursor: pointer;
+  padding: 6px 10px;
+  font-size: 16px;
+  line-height: 1;
+  transition: background 0.15s, border-color 0.15s, color 0.15s, opacity 0.15s;
+  font-family: inherit;
+}
+
+.library-toggle-btn.on {
+  border-color: #6c5ce7;
+  background: #1e1a2e;
+  color: #c8c0f0;
+}
+
+.library-toggle-btn.on:hover:not(:disabled) {
+  background: #2a2245;
+  border-color: #7c6af7;
+}
+
+.library-toggle-btn.off {
+  opacity: 0.45;
+  filter: grayscale(70%);
+}
+
+.library-toggle-btn.off:hover:not(:disabled) {
+  opacity: 0.75;
+  background: #1a1a1a;
+  border-color: #444;
+}
+
+.library-toggle-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+
+/* ═══════════════════════════════
+   RAG SOURCES BADGE — Phase 4
+   Shown beneath an AI reply when library chunks were used to help answer.
+═══════════════════════════════ */
+
+.message-sources {
+  margin-top: 10px;
+  padding: 8px 12px;
+  background: #1a1a2e;
+  border: 1px solid #2a2a4a;
+  border-radius: 8px;
+  font-size: 12px;
+  color: #a89cf7;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.message-sources .sources-icon {
+  font-size: 14px;
+}
+
+.message-sources .sources-label {
+  color: #888;
+}
+
+.message-sources .sources-files {
+  color: #c8c0f0;
+  font-weight: 500;
+}
+
+
+/* ═══════════════════════════════
    LIBRARY (RAG knowledge base) — Phase 3
 ═══════════════════════════════ */
 

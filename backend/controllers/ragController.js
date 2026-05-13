@@ -29,6 +29,7 @@ const CHUNK_SIZE       = 1000;   // characters per chunk (~250 tokens)
 const CHUNK_OVERLAP    = 100;    // chars of overlap between adjacent chunks
 const MIN_CHUNK_LENGTH = 50;     // skip chunks smaller than this — too noisy
 
+const mongoose = require('mongoose');
 
 const LibraryFile  = require('../models/LibraryFile');
 const LibraryChunk = require('../models/LibraryChunk');
@@ -174,4 +175,58 @@ async function indexDocument(text, userId, filename, size) {
   return libraryFile;
 }
 
-module.exports = { loadEmbedder, embedText, isEmbedderReady, indexDocument };
+async function retrieveChunks(question, userId, k = 5) {
+
+  if (!isEmbedderReady()) {
+    throw new Error('Embedder is not ready — cannot retrieve chunks.');
+  }
+
+  const queryVector = await embedText(question, 'query');
+
+  let results;
+  try {
+    results = await LibraryChunk.aggregate([
+      {
+        $vectorSearch: {
+          index:         'chunks_vector_index',
+          path:          'vector',
+          queryVector:   queryVector,
+          numCandidates: 100,
+          limit:         k,
+          filter:        { userId: new mongoose.Types.ObjectId(userId) }
+        }
+      },
+      {
+        $project: {
+          _id:           0,
+          text:          1,
+          chunkIndex:    1,
+          libraryFileId: 1,
+          score:         { $meta: 'vectorSearchScore' }
+        }
+      }
+    ]);
+  } catch (err) {
+    throw new Error(`Vector search failed: ${err.message}. Is the 'chunks_vector_index' Atlas Search index created?`);
+  }
+
+  const fileIds = [...new Set(results.map(r => r.libraryFileId.toString()))];
+
+  const files = await LibraryFile.find({ _id: { $in: fileIds } }, 'filename');
+
+  const fileMap = new Map(files.map(f => [f._id.toString(), f.filename]));
+
+  const enriched = results.map(r => ({
+    text:       r.text,
+    score:      r.score,
+    chunkIndex: r.chunkIndex,
+    filename:   fileMap.get(r.libraryFileId.toString()) || '(deleted file)'
+  }));
+
+  console.log(`[RAG] Retrieved ${enriched.length} chunks for the question (top score: ${enriched[0]?.score?.toFixed(3) || 'n/a'})`);
+
+  return enriched;
+}
+
+
+module.exports = { loadEmbedder, embedText, isEmbedderReady, indexDocument, retrieveChunks };

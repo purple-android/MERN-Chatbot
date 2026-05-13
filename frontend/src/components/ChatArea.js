@@ -22,6 +22,22 @@ function ChatArea({ messages, loading }) {
               {msg.role === 'user' ? 'You' : 'Llama'}
             </div>
             <div className="message-text">{msg.content}</div>
+
+            {/* ── RAG sources badge (Phase 4) ── */}
+            {msg.role === 'assistant' && msg.sources && msg.sources.length > 0 && (
+              <div className="message-sources">
+                <span className="sources-icon">📚</span>
+                <span className="sources-label">
+                  Used {msg.sources.length} source{msg.sources.length > 1 ? 's' : ''} from your library:
+                </span>
+                <span className="sources-files">
+                  {/* Deduplicate filenames before listing — same file may have
+                      contributed multiple chunks but we only need to show it once. */}
+                  {[...new Set(msg.sources.map(s => s.filename))].join(', ')}
+                </span>
+              </div>
+            )}
+
           </div>
         </div>
       ))}

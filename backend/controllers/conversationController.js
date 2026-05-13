@@ -1,4 +1,8 @@
 const Conversation = require('../models/Conversation');
+
+const LibraryChunk = require('../models/LibraryChunk');
+const { retrieveChunks } = require('./ragController');
+
 const Groq = require('groq-sdk');
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
@@ -62,7 +66,7 @@ const createConversation = async (req, res) => {
 // ── sendMessage ──
 const sendMessage = async (req, res) => {
   try {
-    const { content } = req.body;
+    const { content, useLibrary = true } = req.body;
     const conversation = await Conversation.findById(req.params.id);
 
     if (!conversation) return res.status(404).json({ error: 'Conversation not found' });
@@ -88,7 +92,7 @@ const sendMessage = async (req, res) => {
       if (m.content.length > MAX_HISTORY_MESSAGE_LENGTH) {
         return {
           role:    m.role,
-                    content: m.content.slice(0, MAX_HISTORY_MESSAGE_LENGTH) +
+          content: m.content.slice(0, MAX_HISTORY_MESSAGE_LENGTH) +
                    '\n\n[Note: this message was trimmed because it was too long.]'
         };
       }
@@ -104,7 +108,56 @@ const sendMessage = async (req, res) => {
         : currentMsg.content
     };
 
-    const messagesForAI = [...historyForAI, currentForAI];
+    // ── RAG (Phase 4): consult the user's library if they have one ──
+    let systemPromptForRAG = null;
+    let sourcesForReply    = [];
+
+    const libraryChunkCount = useLibrary
+      ? await LibraryChunk.countDocuments({ userId: req.user._id })
+      : 0;
+
+    if (!useLibrary) {
+      // User explicitly turned the library toggle OFF — don't search, don't embed.
+      // The chat will run with normal LLM behaviour, no document context.
+      console.log('[Chat] Library toggle is OFF — skipping RAG for this message.');
+    }
+
+    if (libraryChunkCount > 0) {
+      try {
+        const chunks = await retrieveChunks(currentMsg.content, req.user._id, 5);
+
+        if (chunks.length > 0) {
+          const contextBlock = chunks
+            .map((c, idx) => `[Excerpt ${idx + 1}] from "${c.filename}":\n${c.text}`)
+            .join('\n\n---\n\n');
+
+          systemPromptForRAG = {
+            role: 'system',
+            content:
+              'You are a helpful assistant. The user has a personal library of documents. ' +
+              'Below are excerpts from those documents that may be relevant to the user\'s question. ' +
+              'If they answer the question, use them and mention which file you got the info from. ' +
+              'If they DO NOT answer the question, just answer normally from your own knowledge ' +
+              'and do not force the excerpts in.\n\n' +
+              '--- DOCUMENT EXCERPTS ---\n\n' +
+              contextBlock
+          };
+
+          sourcesForReply = chunks.map(c => ({
+            filename:   c.filename,
+            chunkIndex: c.chunkIndex
+          }));
+
+          console.log(`[Chat] RAG enabled — using ${chunks.length} chunks from the user's library.`);
+        }
+      } catch (ragErr) {
+        console.error('[Chat] RAG retrieval failed, falling back to no-RAG:', ragErr.message);
+      }
+    }
+
+    const messagesForAI = systemPromptForRAG
+      ? [systemPromptForRAG, ...historyForAI, currentForAI]
+      : [...historyForAI, currentForAI];
 
     // ── Call the Groq AI with a timeout ──
     const controller = new AbortController();
@@ -162,19 +215,28 @@ const sendMessage = async (req, res) => {
 
     const aiText = aiData.choices[0].message.content;
 
-    conversation.messages.push({ role: 'assistant', content: aiText });
+    conversation.messages.push({
+      role:    'assistant',
+      content: aiText,
+      sources: sourcesForReply
+    });
 
     await conversation.save();
 
-    res.json({ reply: aiText, conversationId: conversation._id });
-
+    res.json({
+      reply:          aiText,
+      conversationId: conversation._id,
+      sources:        sourcesForReply
+    });
+    
   } catch (err) {
     console.error('Error getting AI response:', err.message);
 
     // ── Timeout: AI took too long ──
     if (err.name === 'AbortError') {
       return res.status(408).json({
-        error: 'The AI took longer than 10 minutes to respond. Please try again or use the Summarize button to shorten your document before sending.'      });
+        error: 'The AI took longer than 10 minutes to respond. Please try again with a shorter message or upload large documents to the Library instead.'
+      });
     }
 
     // ── Rate limit reached: Groq returns 429 when the token quota is exceeded ──
