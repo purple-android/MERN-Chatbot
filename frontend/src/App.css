@@ -1083,3 +1083,300 @@ body {
     font-size: 15px;
   }
 }
+
+
+/* ═══════════════════════════════
+   LIBRARY (RAG knowledge base) — Phase 3
+═══════════════════════════════ */
+
+/* ── Library button in the sidebar ──
+   Styled like the "+ New Chat" button but with its own colour accent. */
+.library-btn {
+  margin: 0 12px 12px;
+  padding: 9px 14px;
+  background: #1a1a1a;
+  color: #c8c8c8;
+  border: 1px solid #2a2a2a;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13.5px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: background 0.15s, border-color 0.15s;
+  font-family: inherit;
+  width: calc(100% - 24px);
+  text-align: left;
+}
+
+.library-btn:hover {
+  background: #222;
+  border-color: #333;
+  color: #e8e8e8;
+}
+
+/* When the Library page is currently open, give the button a purple highlight */
+.library-btn.active {
+  background: #1e1a2e;
+  border-color: #3a2a5a;
+  color: #c8c0f0;
+}
+
+.library-icon {
+  font-size: 16px;
+}
+
+
+/* ── Library page container ──
+   The main scrollable area on the right side of the screen when the Library
+   view is open. Padding gives it room to breathe. */
+.library-page {
+  flex: 1;
+  overflow-y: auto;
+  padding: 40px 32px;
+  max-width: 900px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+
+/* ── Page header ── */
+.library-header {
+  margin-bottom: 32px;
+}
+
+.library-header h1 {
+  font-size: 28px;
+  font-weight: 600;
+  color: #f0f0f0;
+  letter-spacing: -0.5px;
+  margin-bottom: 6px;
+}
+
+.library-header p {
+  font-size: 14px;
+  color: #888;
+}
+
+
+/* ── Upload section ── */
+.library-upload-section {
+  margin-bottom: 32px;
+}
+
+/* The big "Choose a file" button — looks like a drag-and-drop zone */
+.upload-button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 32px 16px;
+  background: #141420;
+  border: 2px dashed #2a2a4a;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.upload-button:hover {
+  background: #1a1a2e;
+  border-color: #3a3a5a;
+}
+
+.upload-button-icon {
+  font-size: 28px;
+}
+
+.upload-button-text {
+  font-size: 15px;
+  color: #c8c0f0;
+  font-weight: 500;
+}
+
+.upload-button-hint {
+  font-size: 12px;
+  color: #666;
+}
+
+
+/* ── Upload progress UI ──
+   Shown in place of the upload button while a file is being uploaded/indexed. */
+.upload-progress {
+  background: #141420;
+  border: 1px solid #2a2a4a;
+  border-radius: 12px;
+  padding: 16px 18px;
+}
+
+.upload-progress-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+
+.upload-progress-filename {
+  color: #e8e8e8;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 60%;
+}
+
+.upload-progress-status {
+  color: #a89cf7;
+  font-size: 12px;
+}
+
+/* The horizontal bar that fills up as upload progresses */
+.progress-bar {
+  height: 6px;
+  background: #1a1a2e;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: #7c6af7;
+  border-radius: 3px;
+  transition: width 0.2s linear;
+}
+
+/* When the bar is in 'indexing' mode (bytes sent, server is processing),
+   pulse it gently so the user can tell something is still happening. */
+.progress-bar-fill.indexing {
+  animation: pulse-purple 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-purple {
+  0%, 100% { background: #7c6af7; opacity: 1; }
+  50%      { background: #a89cf7; opacity: 0.6; }
+}
+
+
+/* Error message shown under the upload area if the upload failed */
+.upload-error {
+  margin-top: 12px;
+  padding: 10px 14px;
+  background: #2a1818;
+  border: 1px solid #4a2828;
+  border-radius: 8px;
+  color: #e8a8a8;
+  font-size: 13px;
+}
+
+
+/* ── File list / table ── */
+.library-list {
+  margin-top: 16px;
+}
+
+.library-loading,
+.library-empty {
+  text-align: center;
+  padding: 40px 16px;
+  color: #666;
+  font-size: 14px;
+}
+
+.library-empty-hint {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #444;
+}
+
+
+/* The table that lists every uploaded file */
+.library-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+
+.library-table th {
+  text-align: left;
+  padding: 10px 12px;
+  color: #666;
+  font-weight: 500;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid #1f1f1f;
+}
+
+.library-table td {
+  padding: 12px;
+  border-bottom: 1px solid #161616;
+  color: #c8c8c8;
+}
+
+.library-table tr:hover td {
+  background: #131318;
+}
+
+.library-cell-filename {
+  color: #e8e8e8;
+  font-weight: 500;
+}
+
+/* Small coloured badge showing the file's status */
+.library-status {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: capitalize;
+}
+
+.library-status-indexing {
+  background: #2a2a3a;
+  color: #a89cf7;
+}
+
+.library-status-ready {
+  background: #1a2a1a;
+  color: #88dd88;
+}
+
+.library-status-failed {
+  background: #2a1818;
+  color: #e88;
+}
+
+
+/* The × delete button on each file row */
+.library-delete-btn {
+  background: none;
+  border: none;
+  color: #555;
+  cursor: pointer;
+  font-size: 17px;
+  padding: 0 4px;
+  line-height: 1;
+  transition: color 0.15s;
+}
+
+.library-delete-btn:hover {
+  color: #e05;
+}
+
+
+/* ── Mobile tweaks for the library page ── */
+@media (max-width: 640px) {
+  .library-page {
+    padding: 24px 16px;
+  }
+
+  /* Hide the less-important columns on small screens to fit everything */
+  .library-table th:nth-child(2),  /* Size */
+  .library-table td:nth-child(2),
+  .library-table th:nth-child(5),  /* Uploaded date */
+  .library-table td:nth-child(5) {
+    display: none;
+  }
+}

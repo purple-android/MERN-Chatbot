@@ -1,7 +1,12 @@
 import React from 'react';
 
-function Sidebar({ conversations, activeId, user, onNewChat, onOpen, onDelete, onLogout, isOpen, onClose }) {
-  return (
+function Sidebar({
+  conversations, activeId, user,
+  onNewChat, onOpen, onDelete, onLogout,
+  isOpen, onClose,
+  currentView, onLibrary
+}) {
+    return (
     <div className={`sidebar${isOpen ? ' open' : ''}`}>
 
       <div className="sidebar-header">
@@ -13,6 +18,15 @@ function Sidebar({ conversations, activeId, user, onNewChat, onOpen, onDelete, o
       <button className="new-chat-btn" onClick={onNewChat}>
         <span className="plus-icon">+</span>
         New Chat
+      </button>
+
+      {/* ── Library Button ── */}
+      <button
+        className={`library-btn${currentView === 'library' ? ' active' : ''}`}
+        onClick={onLibrary}
+      >
+        <span className="library-icon">📚</span>
+        Library
       </button>
 
       <div className="chat-list">

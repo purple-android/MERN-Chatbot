@@ -10,6 +10,7 @@ import Sidebar  from './components/Sidebar';   // Left panel: logo, conversation
 import ChatArea from './components/ChatArea';   // Middle: scrollable message bubbles
 import InputBar from './components/InputBar';   // Bottom: textarea + send button
 import AuthPage from './components/AuthPage';   // Full-screen login / register form
+import LibraryPage from './components/LibraryPage'; // RAG knowledge base page
 
 // APIs
 import * as api from './api/conversations';
@@ -37,6 +38,7 @@ function App() {
   const [uploading, setUploading] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const [recording, setRecording] = useState(false);
+  const [currentView, setCurrentView] = useState('chat');
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const mediaRecorderRef = useRef(null);
@@ -101,14 +103,26 @@ function App() {
   // ── openConversation — opens a specific chat and loads its messages ──
   // id — the MongoDB _id of the conversation to open
   async function openConversation(id) {
+    setCurrentView('chat');
     setActiveId(id);
     const data = await api.getConversation(id);
     setMessages(data.messages);
     setSidebarOpen(false);
   }
 
+  // ── openLibrary — switches the right-side view to the Library page ──
+  // Called by the Sidebar when the user clicks the "📚 Library" button.
+  function openLibrary() {
+    setCurrentView('library');
+    // Clear activeId so no chat row is highlighted while we're on the library page
+    setActiveId(null);
+    // On mobile, close the sidebar so the library page fills the screen
+    setSidebarOpen(false);      
+  }
+
   // ── newChat — creates a brand new empty conversation in the database ──
   async function newChat() {
+    setCurrentView('chat');
     const data = await api.createConversation();
     setConversations(prev => [data, ...prev]);
     setActiveId(data._id);
@@ -426,6 +440,8 @@ function App() {
         onLogout={handleLogout}
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
+        currentView={currentView}       // 'chat' or 'library' — used to highlight the Library button
+        onLibrary={openLibrary}         // Called when the "📚 Library" button is clicked        
       />
 
       <div className="main">
@@ -441,7 +457,9 @@ function App() {
           <span className="mobile-app-title">Llama Chat</span>
         </div>
 
-        {!activeId ? (
+        {currentView === 'library' ? (
+          <LibraryPage />
+        ) : !activeId ? (
           // ── Welcome screen ──
           <div className="welcome">
             <div className="welcome-icon">✦</div>
