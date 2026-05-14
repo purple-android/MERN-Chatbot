@@ -1,4 +1,5 @@
 import React from 'react';
+import { Plus, BookOpen, X, LogOut } from 'lucide-react';
 
 function Sidebar({
   conversations, activeId, user,
@@ -12,11 +13,13 @@ function Sidebar({
       <div className="sidebar-header">
         <span className="logo-dot" />
         <span className="app-name">Llama Chat</span>
-        <button className="sidebar-close-btn" onClick={onClose}>×</button>
+        <button className="sidebar-close-btn" onClick={onClose}>
+          <X size={18} />
+        </button>
       </div>
 
       <button className="new-chat-btn" onClick={onNewChat}>
-        <span className="plus-icon">+</span>
+        <Plus size={16} className="plus-icon" />
         New Chat
       </button>
 
@@ -25,7 +28,7 @@ function Sidebar({
         className={`library-btn${currentView === 'library' ? ' active' : ''}`}
         onClick={onLibrary}
       >
-        <span className="library-icon">📚</span>
+        <BookOpen size={16} className="library-icon" />
         Library
       </button>
 
@@ -42,7 +45,7 @@ function Sidebar({
               onClick={(e) => { e.stopPropagation(); onDelete(conv._id); }}
               title="Delete chat"
             >
-              ×
+              <X size={14} />
             </button>
           </div>
         ))}
@@ -56,7 +59,8 @@ function Sidebar({
         <span className="user-name">{user.username}</span>
 
         <button className="logout-btn" onClick={onLogout} title="Log out">
-          ⎋
+          
+          <LogOut size={16} />
         </button>
       </div>
 

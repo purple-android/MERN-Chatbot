@@ -17,6 +17,10 @@ const requireAuth = async (req, res, next) => {
 
     req.user = await User.findById(decoded.id).select('-password');
 
+    if (!req.user) {
+      return res.status(401).json({ error: 'User no longer exists — please log in again' });
+    }
+
     next();
   } catch (err) {
     res.status(401).json({ error: 'Invalid or expired token — please log in again' });

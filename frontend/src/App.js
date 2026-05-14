@@ -12,6 +12,10 @@ import InputBar from './components/InputBar';   // Bottom: textarea + send butto
 import AuthPage from './components/AuthPage';   // Full-screen login / register form
 import LibraryPage from './components/LibraryPage'; // RAG knowledge base page
 
+// Lucide icons used directly in App.js — the welcome screen sparkle and the mobile
+// hamburger menu icon.
+import { Sparkles, Menu } from 'lucide-react';
+
 // APIs
 import * as api from './api/conversations';
 import { getMe } from './api/auth';
@@ -98,6 +102,22 @@ function App() {
       api.getAllConversations().then(setConversations);
     }
   }, [user]);
+
+    useEffect(() => {
+    const lastAssistantMsg = [...messages].filter(m => m.role === 'assistant').pop();
+
+    if (lastAssistantMsg && lastAssistantMsg.content) {
+      const titleSnippet = lastAssistantMsg.content
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 20);
+
+      const suffix = lastAssistantMsg.content.trim().length > 20 ? '…' : '';
+      document.title = titleSnippet + suffix || 'Llama Chat';
+    } else {
+      document.title = 'Llama Chat';
+    }
+  }, [messages]);
 
   // ── handleLogin — called by AuthPage after a successful login or register ──
   // token    — the JWT string returned by the backend
@@ -473,7 +493,7 @@ function App() {
             onClick={() => setSidebarOpen(true)}
             title="Open menu"
           >
-            ☰
+            <Menu size={22} />
           </button>
           <span className="mobile-app-title">Llama Chat</span>
         </div>
@@ -483,7 +503,9 @@ function App() {
         ) : !activeId ? (
           // ── Welcome screen ──
           <div className="welcome">
-            <div className="welcome-icon">✦</div>
+            <div className="welcome-icon">
+              <Sparkles size={36} />
+            </div>
             <h1>Hi, {user.username} 👋</h1>
             <p>What can I help with today?</p>
             <button className="start-btn" onClick={newChat}>Start chatting</button>

@@ -1,5 +1,8 @@
 import React, { useRef, useEffect } from 'react';
 
+import ReactMarkdown from 'react-markdown';
+import { BookOpen } from 'lucide-react';
+
 function ChatArea({ messages, loading }) {
   const bottomRef = useRef(null);
 
@@ -21,12 +24,19 @@ function ChatArea({ messages, loading }) {
             <div className="message-sender">
               {msg.role === 'user' ? 'You' : 'Llama'}
             </div>
-            <div className="message-text">{msg.content}</div>
+
+            {msg.role === 'assistant' ? (
+              <div className="message-text message-text-markdown">
+                <ReactMarkdown>{msg.content}</ReactMarkdown>
+              </div>
+            ) : (
+              <div className="message-text">{msg.content}</div>
+            )}
 
             {/* ── RAG sources badge (Phase 4) ── */}
             {msg.role === 'assistant' && msg.sources && msg.sources.length > 0 && (
               <div className="message-sources">
-                <span className="sources-icon">📚</span>
+                <BookOpen size={14} className="sources-icon" />
                 <span className="sources-label">
                   Used {msg.sources.length} source{msg.sources.length > 1 ? 's' : ''} from your library:
                 </span>

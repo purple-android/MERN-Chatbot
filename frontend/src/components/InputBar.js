@@ -1,10 +1,27 @@
-// InputBar.js
-// This component is the typing area at the bottom of the screen.
-// It contains the textarea, the paperclip button (with submenu), the mic button, and send.
-
 import React, { useRef } from 'react';
 
-// ── InputBar Component ──
+// Lucide icon components — clean SVG icons.
+//   BookOpen    — for the library on/off toggle (replaces 📚 emoji)
+//   Paperclip   — for the attach button (replaces 📎 emoji)
+//   FileText    — for the "Document" submenu option (replaces 📄 emoji)
+//   Music       — for the "Audio file" submenu option (replaces 🎵 emoji)
+//   Mic         — for the idle microphone state (replaces 🎙️ emoji)
+//   Square      — for the recording state (replaces ⏹️ emoji)
+//   Loader2     — for loading/uploading spinner states (replaces ⏳ emoji)
+//   ArrowUp     — for the send button (replaces ↑ character)
+//   X           — for the remove-attachment button (replaces × character)
+import {
+  BookOpen,
+  Paperclip,
+  FileText,
+  Music,
+  Mic,
+  Square,
+  Loader2,
+  ArrowUp,
+  X
+} from 'lucide-react';
+
 function InputBar({
   input, loading, onInputChange, onKeyDown, onSend,
   attachedDoc, uploading,
@@ -14,6 +31,9 @@ function InputBar({
   useLibrary, onToggleLibrary
 }) {
 
+  // docInputRef points directly at the hidden document file input element in the DOM
+  // audioInputRef points directly at the hidden audio file input element in the DOM
+  // We use these to programmatically open the file picker — more reliable than <label htmlFor>
   const docInputRef   = useRef(null);
   const audioInputRef = useRef(null);
 
@@ -22,14 +42,18 @@ function InputBar({
 
       {attachedDoc && (
         <div className="attachment-badge">
-          <span>📄 {attachedDoc.filename}</span>
+
+          <span className="attachment-badge-name">
+            <FileText size={14} />
+            {attachedDoc.filename}
+          </span>
 
           <button
             className="remove-btn"
             onClick={onRemoveAttachment}
             title="Remove attachment"
           >
-            ×
+            <X size={16} />
           </button>
         </div>
       )}
@@ -54,7 +78,7 @@ function InputBar({
               ? 'Library is ON — click to turn off (skip RAG, chat with LLM only)'
               : 'Library is OFF — click to turn on (search your uploaded files)'}
           >
-            📚
+            <BookOpen size={18} />
           </button>
 
           <div className="attach-btn-wrapper">
@@ -68,7 +92,7 @@ function InputBar({
               disabled={uploading || loading}
               title={uploading ? 'Uploading...' : loading ? 'Please wait...' : 'Attach a file'}
             >
-              {uploading ? '⏳' : '📎'}
+              {uploading ? <Loader2 size={18} className="spin" /> : <Paperclip size={18} />}
             </button>
 
             {attachMenuOpen && (
@@ -81,7 +105,7 @@ function InputBar({
                     onAttachClose();
                   }}
                 >
-                  📄 Document
+                  <FileText size={16} /> Document
                 </button>
 
                 <button
@@ -91,7 +115,7 @@ function InputBar({
                     onAttachClose();
                   }}
                 >
-                  🎵 Audio file
+                  <Music size={16} /> Audio file
                 </button>
 
               </div>
@@ -128,7 +152,12 @@ function InputBar({
                              'Click to record audio'
             }
           >
-            {transcribing ? '⏳' : recording ? '⏹️' : '🎙️'}
+            {transcribing
+              ? <Loader2 size={18} className="spin" />
+              : recording
+                ? <Square size={16} fill="currentColor" />
+                : <Mic size={18} />
+            }
           </button>
 
           <button
@@ -136,7 +165,7 @@ function InputBar({
             onClick={onSend}
             disabled={loading || uploading || transcribing || recording || (!input.trim() && !attachedDoc)}
           >
-            ↑
+            <ArrowUp size={18} strokeWidth={2.5} />
           </button>
 
         </div>

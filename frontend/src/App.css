@@ -110,11 +110,44 @@ body {
 }
 
 /* The "+" symbol inside the button */
+/* Lucide SVG icons render as <svg> elements — color them with stroke + currentColor */
 .plus-icon {
-  font-size: 18px;
-  font-weight: 300;
-  line-height: 1;
   color: #7c6af7;
+  flex-shrink: 0;
+}
+
+.library-icon {
+  flex-shrink: 0;
+}
+
+/* Spin animation — applied to Lucide's Loader2 icon to make it rotate while loading/uploading.
+   Used on the paperclip button, mic button, etc. */
+@keyframes spin-rotate {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+.spin {
+  animation: spin-rotate 1s linear infinite;
+}
+
+/* Make attachment-badge filename flex so icon and text line up */
+.attachment-badge-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #a89cf7;
+}
+
+/* The attach submenu items used to be text-only — give them flex now for icon + label */
+.attach-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 /* The scrollable area that holds the list of chats */
@@ -220,11 +253,12 @@ body {
 }
 
 /* The decorative "✦" symbol at the top */
+/* Welcome screen sparkle (Lucide Sparkles SVG) — colour via currentColor on the svg */
 .welcome-icon {
-  font-size: 32px;
   color: #7c6af7;
-  text-shadow: 0 0 20px #7c6af755;
   margin-bottom: 4px;
+  filter: drop-shadow(0 0 20px #7c6af788);
+  display: inline-flex;
 }
 
 .welcome h1 {
@@ -358,6 +392,151 @@ body {
   color: #c8d8f8;
   display: inline-block;
   text-align: left;
+}
+
+
+/* ═══════════════════════════════
+   MARKDOWN STYLES (assistant replies only)
+   ReactMarkdown renders real HTML tags (h1, h2, h3, strong, em, code, ul, li,
+   blockquote, table, pre, hr, a) inside .message-text-markdown. We style each
+   one to be readable on the dark background.
+═══════════════════════════════ */
+
+/* Markdown messages should NOT use pre-wrap — react-markdown already produces
+   real paragraph elements, so we let them flow naturally. */
+.message-text-markdown {
+  white-space: normal;
+}
+
+/* Headings — make them readable but not huge inside a chat bubble */
+.message-text-markdown h1,
+.message-text-markdown h2,
+.message-text-markdown h3,
+.message-text-markdown h4,
+.message-text-markdown h5,
+.message-text-markdown h6 {
+  color: #f0f0f0;
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 18px 0 8px;
+}
+
+.message-text-markdown h1 { font-size: 22px; }
+.message-text-markdown h2 { font-size: 19px; }
+.message-text-markdown h3 { font-size: 17px; color: #c8c0f0; }
+.message-text-markdown h4 { font-size: 15px; color: #c8c0f0; }
+.message-text-markdown h5,
+.message-text-markdown h6 { font-size: 14px; color: #a89cf7; }
+
+/* First child has no top margin — looks weird if the message starts with extra space */
+.message-text-markdown > *:first-child { margin-top: 0; }
+.message-text-markdown > *:last-child  { margin-bottom: 0; }
+
+/* Paragraphs */
+.message-text-markdown p {
+  margin: 8px 0;
+  color: #e0e0e0;
+  line-height: 1.7;
+}
+
+/* Bold and italics */
+.message-text-markdown strong { color: #fff; font-weight: 600; }
+.message-text-markdown em     { color: #c8c0f0; font-style: italic; }
+
+/* Inline code (single backticks like `foo`) — small grey pill */
+.message-text-markdown code {
+  background: #1a1a2e;
+  color: #d8c8f8;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 13px;
+}
+
+/* Block code (triple backticks) — bigger grey box */
+.message-text-markdown pre {
+  background: #0d0d1a;
+  border: 1px solid #2a2a4a;
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin: 10px 0;
+  overflow-x: auto;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.message-text-markdown pre code {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  color: #e8e8e8;
+}
+
+/* Lists — keep indentation reasonable */
+.message-text-markdown ul,
+.message-text-markdown ol {
+  margin: 8px 0;
+  padding-left: 24px;
+  color: #e0e0e0;
+}
+
+.message-text-markdown li {
+  margin: 4px 0;
+  line-height: 1.6;
+}
+
+/* Nested lists slightly smaller margins */
+.message-text-markdown li > ul,
+.message-text-markdown li > ol {
+  margin: 4px 0;
+}
+
+/* Block quotes — purple left border */
+.message-text-markdown blockquote {
+  border-left: 3px solid #6c5ce7;
+  padding: 4px 14px;
+  margin: 10px 0;
+  background: #14141e;
+  color: #b0b0c8;
+  font-style: italic;
+}
+
+.message-text-markdown blockquote p { color: inherit; }
+
+/* Links */
+.message-text-markdown a {
+  color: #a89cf7;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.message-text-markdown a:hover { color: #c8c0f0; }
+
+/* Horizontal rule */
+.message-text-markdown hr {
+  border: none;
+  border-top: 1px solid #2a2a4a;
+  margin: 16px 0;
+}
+
+/* Tables */
+.message-text-markdown table {
+  border-collapse: collapse;
+  margin: 10px 0;
+  font-size: 13.5px;
+}
+
+.message-text-markdown th,
+.message-text-markdown td {
+  border: 1px solid #2a2a4a;
+  padding: 8px 12px;
+  text-align: left;
+}
+
+.message-text-markdown th {
+  background: #1a1a2e;
+  color: #f0f0f0;
+  font-weight: 600;
 }
 
 
@@ -1201,9 +1380,7 @@ body {
   color: #c8c0f0;
 }
 
-.library-icon {
-  font-size: 16px;
-}
+/* (.library-icon now styled at the top of the file — it's a Lucide SVG, not text) */
 
 
 /* ── Library page container ──
@@ -1230,6 +1407,26 @@ body {
   color: #f0f0f0;
   letter-spacing: -0.5px;
   margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.library-header-icon {
+  color: #a89cf7;
+  flex-shrink: 0;
+}
+
+.library-cell-filename {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.upload-progress-filename {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .library-header p {
