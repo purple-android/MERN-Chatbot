@@ -59,7 +59,7 @@ function Sidebar({
         <span className="user-name">{user.username}</span>
 
         <button className="logout-btn" onClick={onLogout} title="Log out">
-          
+          {/* ⎋ */}
           <LogOut size={16} />
         </button>
       </div>

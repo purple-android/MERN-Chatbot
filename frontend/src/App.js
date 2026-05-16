@@ -503,6 +503,7 @@ function App() {
         ) : !activeId ? (
           // ── Welcome screen ──
           <div className="welcome">
+            {/* <div className="welcome-icon">✦</div> */}
             <div className="welcome-icon">
               <Sparkles size={36} />
             </div>

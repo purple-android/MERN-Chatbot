@@ -50,7 +50,11 @@ app.use((err, req, res, next) => {
 app.use(express.static(path.join(__dirname, '..', 'frontend', 'build')));
 
 // For any URL that isn't an API route, serve the React app's main HTML file
-app.use((req, res) => {
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/')) {
+    return res.status(404).json({ error: 'API endpoint not found' });
+  }
+  if (res.headersSent) return;
   res.sendFile(path.resolve(__dirname, '..', 'frontend', 'build', 'index.html'));
 });
 
