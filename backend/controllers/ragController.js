@@ -1,59 +1,71 @@
-// ── Module-level state ──
-// embedderReady is set to true after loadEmbedder() succeeds at startup.
-// We declare it with 'let' (not 'const') because its value changes.
-let embedderReady = false;
+let embedderReady  = false;
+let activeEmbedder = null;
+let xenovaPipeline = null;
 
+const XENOVA_MODEL      = 'Xenova/all-MiniLM-L6-v2';
+const XENOVA_DIMENSIONS = 384;
 
-// ── Constants ──
-// The Voyage AI model to use. voyage-3-lite is the cheapest and fastest option.
-// Newer/larger models exist if you want higher quality at the cost of money + speed.
-const VOYAGE_MODEL = 'voyage-3-lite';
+const VOYAGE_MODEL      = 'voyage-3-lite';
+const VOYAGE_DIMENSIONS = 512;
 
-// The number of dimensions in the embedding vector this model produces.
-// voyage-3-lite → 512 numbers per embedding.
-// IMPORTANT: when you create the Atlas Vector Search Index, this number MUST match
-// the 'numDimensions' you set there, otherwise searches will fail.
-const EMBEDDING_DIMENSIONS = 512;
-
-// The endpoint URL for Voyage's embeddings API. Documented at:
-//   https://docs.voyageai.com/reference/embeddings-api
 const VOYAGE_API_URL = 'https://api.voyageai.com/v1/embeddings';
 
-// How long to wait for the Voyage API to respond before giving up (in milliseconds).
-// 30 seconds is generous — embeddings normally come back in under a second.
 const VOYAGE_TIMEOUT_MS = 30000;
 
+function getActiveDimensions() {
+  if (activeEmbedder === 'xenova') return XENOVA_DIMENSIONS;
+  if (activeEmbedder === 'voyage') return VOYAGE_DIMENSIONS;
+  return 0;
+}
 
-// Chunking constants for indexDocument()
-const CHUNK_SIZE       = 1000;   // characters per chunk (~250 tokens)
-const CHUNK_OVERLAP    = 100;    // chars of overlap between adjacent chunks
-const MIN_CHUNK_LENGTH = 50;     // skip chunks smaller than this — too noisy
-
-const mongoose = require('mongoose');
+const CHUNK_SIZE       = 1000;
+const CHUNK_OVERLAP    = 100;
+const MIN_CHUNK_LENGTH = 50;
 
 const LibraryFile  = require('../models/LibraryFile');
 const LibraryChunk = require('../models/LibraryChunk');
 
+async function loadXenova() {
+  const { pipeline } = await import('@xenova/transformers');
+
+  xenovaPipeline = await pipeline('feature-extraction', XENOVA_MODEL);
+
+  const out = await xenovaPipeline('connection test', { pooling: 'mean', normalize: true });
+  const vec = Array.from(out.data);
+  if (vec.length !== XENOVA_DIMENSIONS) {
+    throw new Error(`Xenova returned ${vec.length} dims, expected ${XENOVA_DIMENSIONS}`);
+  }
+}
+
 async function loadEmbedder() {
 
-  console.log('[RAG] Verifying Voyage AI connection...');
+  console.log('[RAG] Trying local Xenova embedder first...');
+  try {
+    await loadXenova();
+    activeEmbedder = 'xenova';
+    embedderReady  = true;
+    console.log(`[RAG] ✅ Using XENOVA (local). Model: ${XENOVA_MODEL}, dimensions: ${XENOVA_DIMENSIONS}.`);
+    return;
+  } catch (xenovaErr) {
+    console.warn('[RAG] Xenova failed to load:', xenovaErr.message);
+    console.warn('[RAG] Falling back to Voyage AI...');
+  }
 
   if (!process.env.VOYAGE_API_KEY) {
-    throw new Error('VOYAGE_API_KEY is not set in .env — Voyage AI cannot be used.');
+    throw new Error('Xenova failed AND VOYAGE_API_KEY is not set — no embedder available.');
   }
 
   const testVector = await callVoyageAPI('connection test', 'document');
-
-  if (!Array.isArray(testVector) || testVector.length !== EMBEDDING_DIMENSIONS) {
+  if (!Array.isArray(testVector) || testVector.length !== VOYAGE_DIMENSIONS) {
     throw new Error(
-      `Voyage returned an unexpected vector shape: expected ${EMBEDDING_DIMENSIONS}` +
+      `Voyage returned an unexpected vector shape: expected ${VOYAGE_DIMENSIONS}` +
       ` numbers but got ${testVector?.length}`
     );
   }
 
-  embedderReady = true;
-
-  console.log(`[RAG] Voyage AI ready. Model: ${VOYAGE_MODEL}, dimensions: ${EMBEDDING_DIMENSIONS}.`);
+  activeEmbedder = 'voyage';
+  embedderReady  = true;
+  console.log(`[RAG] ✅ Using VOYAGE (fallback). Model: ${VOYAGE_MODEL}, dimensions: ${VOYAGE_DIMENSIONS}.`);
 }
 
 function isEmbedderReady() {
@@ -61,6 +73,7 @@ function isEmbedderReady() {
 }
 
 async function callVoyageAPI(text, inputType) {
+
   const controller = new AbortController();
   const timer      = setTimeout(() => controller.abort(), VOYAGE_TIMEOUT_MS);
 
@@ -100,7 +113,7 @@ async function callVoyageAPI(text, inputType) {
 async function embedText(text, inputType = 'document') {
 
   if (!embedderReady) {
-    throw new Error('Embedder is not ready yet — Voyage AI connection has not been verified.');
+    throw new Error('Embedder is not ready yet — no embedder was loaded at startup.');
   }
 
   if (!text || !text.trim()) {
@@ -109,6 +122,11 @@ async function embedText(text, inputType = 'document') {
 
   if (inputType !== 'document' && inputType !== 'query') {
     throw new Error(`inputType must be 'document' or 'query', got '${inputType}'`);
+  }
+
+  if (activeEmbedder === 'xenova') {
+    const out = await xenovaPipeline(text, { pooling: 'mean', normalize: true });
+    return Array.from(out.data);
   }
 
   return callVoyageAPI(text, inputType);
@@ -158,7 +176,8 @@ async function indexDocument(text, userId, filename, size) {
       userId,
       chunkIndex: i,
       text:       chunks[i],
-      vector
+      vector,
+      embedder:   activeEmbedder
     });
   }
 
@@ -175,6 +194,28 @@ async function indexDocument(text, userId, filename, size) {
   return libraryFile;
 }
 
+function cosineSimilarity(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) {
+    return 0;
+  }
+
+  let dot = 0;
+  let magA = 0;
+  let magB = 0;
+
+  for (let i = 0; i < a.length; i++) {
+    dot  += a[i] * b[i];
+    magA += a[i] * a[i];
+    magB += b[i] * b[i];
+  }
+
+  const denominator = Math.sqrt(magA) * Math.sqrt(magB);
+
+  if (denominator === 0) return 0;
+
+  return dot / denominator;
+}
+
 async function retrieveChunks(question, userId, k = 5) {
 
   if (!isEmbedderReady()) {
@@ -183,50 +224,42 @@ async function retrieveChunks(question, userId, k = 5) {
 
   const queryVector = await embedText(question, 'query');
 
-  let results;
-  try {
-    results = await LibraryChunk.aggregate([
-      {
-        $vectorSearch: {
-          index:         'chunks_vector_index',
-          path:          'vector',
-          queryVector:   queryVector,
-          numCandidates: 100,
-          limit:         k,
-          filter:        { userId: new mongoose.Types.ObjectId(userId) }
-        }
-      },
-      {
-        $project: {
-          _id:           0,
-          text:          1,
-          chunkIndex:    1,
-          libraryFileId: 1,
-          score:         { $meta: 'vectorSearchScore' }
-        }
-      }
-    ]);
-  } catch (err) {
-    throw new Error(`Vector search failed: ${err.message}. Is the 'chunks_vector_index' Atlas Search index created?`);
+  const chunks = await LibraryChunk
+    .find({ userId }, 'vector text chunkIndex libraryFileId')
+    .lean();
+
+  if (chunks.length === 0) {
+    console.log('[RAG] No chunks found for this user — skipping retrieval.');
+    return [];
   }
 
-  const fileIds = [...new Set(results.map(r => r.libraryFileId.toString()))];
+  const scored = chunks.map(chunk => ({
+    text:          chunk.text,
+    chunkIndex:    chunk.chunkIndex,
+    libraryFileId: chunk.libraryFileId,
+    score:         cosineSimilarity(queryVector, chunk.vector)
+  }));
+
+  const topChunks = scored
+    .sort((a, b) => b.score - a.score)
+    .slice(0, k);
+
+  const fileIds = [...new Set(topChunks.map(c => c.libraryFileId.toString()))];
 
   const files = await LibraryFile.find({ _id: { $in: fileIds } }, 'filename');
 
   const fileMap = new Map(files.map(f => [f._id.toString(), f.filename]));
 
-  const enriched = results.map(r => ({
-    text:       r.text,
-    score:      r.score,
-    chunkIndex: r.chunkIndex,
-    filename:   fileMap.get(r.libraryFileId.toString()) || '(deleted file)'
+  const enriched = topChunks.map(c => ({
+    text:       c.text,
+    score:      c.score,
+    chunkIndex: c.chunkIndex,
+    filename:   fileMap.get(c.libraryFileId.toString()) || '(deleted file)'
   }));
 
-  console.log(`[RAG] Retrieved ${enriched.length} chunks for the question (top score: ${enriched[0]?.score?.toFixed(3) || 'n/a'})`);
+  console.log(`[RAG] Brute-force search over ${chunks.length} chunks → top ${enriched.length} (best score: ${enriched[0]?.score?.toFixed(3) || 'n/a'})`);
 
   return enriched;
 }
-
 
 module.exports = { loadEmbedder, embedText, isEmbedderReady, indexDocument, retrieveChunks };

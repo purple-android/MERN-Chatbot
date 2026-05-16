@@ -61,9 +61,31 @@ app.use((req, res, next) => {
 dns.setServers(['8.8.8.8', '1.1.1.1']);
 
 // ── Start the server ──
-mongoose.connect(process.env.MONGO_URI)
-  .then(async () => {
-    console.log('Connected to MongoDB');
+async function connectToMongo() {
+  const localUri = process.env.MONGO_URI_LOCAL;
+  const cloudUri = process.env.MONGO_URI;
+
+  if (localUri) {
+    try {
+      console.log('Trying LOCAL MongoDB first...');
+      await mongoose.connect(localUri, { serverSelectionTimeoutMS: 5000 });
+      return 'LOCAL';
+    } catch (localErr) {
+      console.warn('Local MongoDB unreachable:', localErr.message);
+      console.warn('Falling back to cloud Atlas...');
+    }
+  }
+
+  if (!cloudUri) {
+    throw new Error('Local MongoDB failed and MONGO_URI (cloud) is not set — no database available.');
+  }
+  await mongoose.connect(cloudUri);
+  return 'CLOUD';
+}
+
+connectToMongo()
+  .then(async (which) => {
+    console.log(`Connected to MongoDB (${which})`);
 
     try {
       await loadEmbedder();
@@ -71,7 +93,7 @@ mongoose.connect(process.env.MONGO_URI)
       console.error('[RAG] Embedder failed to load:', embedderErr.message);
       console.error('[RAG] Server will still start, but Library / RAG features will not work until this is fixed.');
     }
-    
+
     app.listen(process.env.PORT || 4000, () => {
       console.log('Server running on port', process.env.PORT || 4000);
     });

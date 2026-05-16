@@ -29,6 +29,11 @@ const libraryChunkSchema = new mongoose.Schema({
   vector: {
     type:     [Number],
     required: true
+  },
+
+  embedder: {
+    type: String,
+    enum: ['xenova', 'voyage']
   }
 
 }, {

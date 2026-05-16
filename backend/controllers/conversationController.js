@@ -235,7 +235,7 @@ const sendMessage = async (req, res) => {
     // ── Timeout: AI took too long ──
     if (err.name === 'AbortError') {
       return res.status(408).json({
-        error: 'The AI took longer than 10 minutes to respond. Please try again with a shorter message or upload large documents to the Library instead.'
+        error: 'The AI took longer than 10 minutes to respond. Please try again or use the Summarize button to shorten your document before sending.'
       });
     }
 
