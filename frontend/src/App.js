@@ -59,6 +59,20 @@ function App() {
     });
   }
 
+  const [useWebSearch, setUseWebSearch] = useState(() => {
+    const saved = localStorage.getItem('useWebSearch');
+    return saved === 'true';   // off unless they previously turned it on
+  });
+
+  // ── handleToggleWebSearch — flips web search on/off ──
+  function handleToggleWebSearch() {
+    setUseWebSearch(prev => {
+      const next = !prev;
+      localStorage.setItem('useWebSearch', next ? 'true' : 'false');
+      return next;
+    });
+  }
+
   const [currentView, setCurrentView] = useState('chat');
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -268,7 +282,7 @@ function App() {
     // shows an error bubble instead of silently crashing
     let data;
     try {
-      data = await api.sendMessage(activeId, contentToSend, useLibrary);
+      data = await api.sendMessage(activeId, contentToSend, useLibrary, useWebSearch);
     } catch (err) {
       // Network-level failure (could not even reach the server)
       setLoading(false);
@@ -287,9 +301,10 @@ function App() {
     }
     
     setMessages(prev => [...prev, {
-      role:    'assistant',
-      content: data.reply,
-      sources: data.sources || []
+      role:       'assistant',
+      content:    data.reply,
+      sources:    data.sources || [],
+      webSources: data.webSources || []
     }]);
     
     api.getAllConversations().then(setConversations);
@@ -538,7 +553,9 @@ function App() {
               recording={recording}
               onMicClick={handleMicClick}
               useLibrary={useLibrary}                          // Whether RAG / library search is currently ON
-              onToggleLibrary={handleToggleLibrary}            // Flips the library toggle            
+              onToggleLibrary={handleToggleLibrary}            // Flips the library toggle
+              useWebSearch={useWebSearch}                      // Whether web search is currently ON
+              onToggleWebSearch={handleToggleWebSearch}        // Flips the web search toggle
             />
           </>
         )}

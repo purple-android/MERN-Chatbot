@@ -12,6 +12,7 @@ import React, { useRef } from 'react';
 //   X           — for the remove-attachment button (replaces × character)
 import {
   BookOpen,
+  Globe,
   Paperclip,
   FileText,
   Music,
@@ -28,7 +29,8 @@ function InputBar({
   onAttachClick, attachMenuOpen, onAttachClose, onDocSelect, onAudioFileSelect,
   onRemoveAttachment,
   transcribing, recording, onMicClick,
-  useLibrary, onToggleLibrary
+  useLibrary, onToggleLibrary,
+  useWebSearch, onToggleWebSearch
 }) {
 
   // docInputRef points directly at the hidden document file input element in the DOM
@@ -79,6 +81,17 @@ function InputBar({
               : 'Library is OFF — click to turn on (search your uploaded files)'}
           >
             <BookOpen size={18} />
+          </button>
+
+          <button
+            className={`library-toggle-btn${useWebSearch ? ' on' : ' off'}`}
+            onClick={onToggleWebSearch}
+            disabled={loading || uploading}
+            title={useWebSearch
+              ? 'Web search is ON — click to turn off'
+              : 'Web search is OFF — click to search the internet'}
+          >
+            <Globe size={18} />
           </button>
 
           <div className="attach-btn-wrapper">

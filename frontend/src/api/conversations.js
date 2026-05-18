@@ -27,11 +27,11 @@ export async function createConversation() {
   return res.json();
 }
 
-export async function sendMessage(id, content, useLibrary = true) {
+export async function sendMessage(id, content, useLibrary = true, useWebSearch = false) {
   const res = await fetch(`${BASE}/${id}/message`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
-    body: JSON.stringify({ content, useLibrary })
+    body: JSON.stringify({ content, useLibrary, useWebSearch })
   });
   return res.json();
 }

@@ -1294,14 +1294,15 @@ body {
 }
 
 .library-toggle-btn.off {
-  opacity: 0.45;
-  filter: grayscale(70%);
+  border-color: #555;
+  background: transparent;
+  color: #9a9a9a;
 }
 
 .library-toggle-btn.off:hover:not(:disabled) {
-  opacity: 0.75;
-  background: #1a1a1a;
-  border-color: #444;
+  background: #1f1f1f;
+  border-color: #777;
+  color: #c4c4c4;
 }
 
 .library-toggle-btn:disabled {
@@ -1340,6 +1341,41 @@ body {
 .message-sources .sources-files {
   color: #c8c0f0;
   font-weight: 500;
+}
+
+.message-sources .web-source-link {
+  color: #c8c0f0;
+  font-weight: 500;
+  text-decoration: underline;
+}
+
+.message-sources .web-source-link:hover {
+  color: #fff;
+}
+
+.message-sources-web {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.message-sources-web .web-sources-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.message-sources-web .web-sources-list {
+  list-style: none;
+  margin: 4px 0 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 100%;
+}
+
+.message-sources-web .web-sources-list li {
+  line-height: 1.4;
 }
 
 

@@ -2,6 +2,7 @@ const Conversation = require('../models/Conversation');
 
 const LibraryChunk = require('../models/LibraryChunk');
 const { retrieveChunks } = require('./ragController');
+const { searchWeb } = require('./webSearchController');
 
 const Groq = require('groq-sdk');
 
@@ -14,6 +15,46 @@ const MAX_HISTORY_MESSAGES = 10;
 const MAX_HISTORY_MESSAGE_LENGTH = 600;  // almost 150 tokens
 const MAX_CURRENT_MESSAGE_LENGTH = 80000;  // almost 20000 tokens
 const AI_TIMEOUT_MS = 600000; // 600 seconds or 10 minutes
+
+
+// ── generateSearchQuery ──
+// Turns the conversation into one good web search query. 
+// Falls back to currentText on any failure so web search never breaks the chat.
+async function generateSearchQuery(historyForAI, currentText) {
+  try {
+    const planningMessages = [
+      {
+        role: 'system',
+        content:
+          'You convert a conversation into ONE short web search query. ' +
+          'Read the conversation and the user\'s latest message, then ' +
+          'output the single best search query to find the answer online. ' +
+          'Resolve references like "it", "try again", or "the sequel" ' +
+          'using the conversation context. Reply with ONLY the query ' +
+          'text — no quotes, no explanation, no extra words.'
+      },
+      ...historyForAI,
+      { role: 'user', content: currentText }
+    ];
+
+    const { data } = await groq.chat.completions.create({
+      model:      MODEL,
+      max_tokens: 60,
+      messages:   planningMessages
+    }).withResponse();
+
+    const query = data.choices?.[0]?.message?.content?.trim();
+
+    if (query && query.length > 0) {
+      return query;
+    }
+    return currentText;
+
+  } catch (err) {
+    console.error('[WebSearch] Query generation failed, using raw message:', err.message);
+    return currentText;
+  }
+}
 
 
 // ── getAllConversations ──
@@ -66,7 +107,7 @@ const createConversation = async (req, res) => {
 // ── sendMessage ──
 const sendMessage = async (req, res) => {
   try {
-    const { content, useLibrary = true } = req.body;
+    const { content, useLibrary = true, useWebSearch = false } = req.body;
     const conversation = await Conversation.findById(req.params.id);
 
     if (!conversation) return res.status(404).json({ error: 'Conversation not found' });
@@ -155,9 +196,42 @@ const sendMessage = async (req, res) => {
       }
     }
 
-    const messagesForAI = systemPromptForRAG
-      ? [systemPromptForRAG, ...historyForAI, currentForAI]
-      : [...historyForAI, currentForAI];
+    // ── Web search: consult the internet if the user turned it on ──
+    let systemPromptForWeb = null;
+    let webSourcesForReply = [];
+
+    if (useWebSearch) {
+      try {
+        const searchQuery = await generateSearchQuery(historyForAI, currentMsg.content);
+        console.log(`[Chat] Web search query: "${searchQuery}"`);
+
+        const webResults = await searchWeb(searchQuery);
+
+        if (webResults) {
+          systemPromptForWeb = {
+            role: 'system',
+            content:
+              'You are a helpful assistant with access to live web search ' +
+              'results for the user\'s question. Use the results below to ' +
+              'give an accurate, up-to-date answer, and mention the source ' +
+              'URL when you rely on one. If the results do not actually ' +
+              'answer the question, say so and answer from your own ' +
+              'knowledge instead.\n\n' +
+              '--- WEB SEARCH RESULTS ---\n\n' +
+              webResults.text
+          };
+          webSourcesForReply = webResults.sources || [];
+          console.log(`[Chat] Web search enabled — added ${webSourcesForReply.length} sources to the prompt.`);
+        }
+      } catch (webErr) {
+        console.error('[Chat] Web search failed, continuing without it:', webErr.message);
+      }
+    } else {
+      console.log('[Chat] Web search toggle is OFF — skipping web search.');
+    }
+
+    const systemPrompts = [systemPromptForRAG, systemPromptForWeb].filter(Boolean);
+    const messagesForAI = [...systemPrompts, ...historyForAI, currentForAI];
 
     // ── Call the Groq AI with a timeout ──
     const controller = new AbortController();
@@ -216,9 +290,10 @@ const sendMessage = async (req, res) => {
     const aiText = aiData.choices[0].message.content;
 
     conversation.messages.push({
-      role:    'assistant',
-      content: aiText,
-      sources: sourcesForReply
+      role:       'assistant',
+      content:    aiText,
+      sources:    sourcesForReply,
+      webSources: webSourcesForReply
     });
 
     await conversation.save();
@@ -226,7 +301,8 @@ const sendMessage = async (req, res) => {
     res.json({
       reply:          aiText,
       conversationId: conversation._id,
-      sources:        sourcesForReply
+      sources:        sourcesForReply,
+      webSources:     webSourcesForReply
     });
     
   } catch (err) {

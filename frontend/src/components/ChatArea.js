@@ -1,7 +1,7 @@
 import React, { useRef, useEffect } from 'react';
 
 import ReactMarkdown from 'react-markdown';
-import { BookOpen } from 'lucide-react';
+import { BookOpen, Globe } from 'lucide-react';
 
 function ChatArea({ messages, loading }) {
   const bottomRef = useRef(null);
@@ -45,6 +45,32 @@ function ChatArea({ messages, loading }) {
                       contributed multiple chunks but we only need to show it once. */}
                   {[...new Set(msg.sources.map(s => s.filename))].join(', ')}
                 </span>
+              </div>
+            )}
+
+            {/* ── Web search sources badge ── */}
+            {msg.role === 'assistant' && msg.webSources && msg.webSources.length > 0 && (
+              <div className="message-sources message-sources-web">
+                <div className="web-sources-header">
+                  <Globe size={14} className="sources-icon" />
+                  <span className="sources-label">
+                    {msg.webSources.length} web source{msg.webSources.length > 1 ? 's' : ''}:
+                  </span>
+                </div>
+                <ul className="web-sources-list">
+                  {msg.webSources.map((s, i) => (
+                    <li key={i}>
+                      <a
+                        href={s.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="web-source-link"
+                      >
+                        {s.title}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
 
