@@ -18,7 +18,7 @@ router.post('/upload', (req, res, next) => {
     if (err) {
       if (err.code === 'LIMIT_FILE_SIZE') {
         return res.status(400).json({
-          error: 'File is too large. Maximum allowed size is 10MB.'
+          error: 'File is too large. Maximum allowed size is 100MB.'
         });
       }
       return res.status(400).json({ error: err.message });

@@ -132,7 +132,7 @@ function LibraryPage() {
             />
             <Upload size={28} className="upload-button-icon" />
             <span className="upload-button-text">Choose a file to upload</span>
-            <span className="upload-button-hint">PDF, DOCX, DOC, or TXT (max 10MB)</span>
+            <span className="upload-button-hint">PDF, DOCX, DOC, or TXT (max 100MB)</span>
           </label>
         )}
 
