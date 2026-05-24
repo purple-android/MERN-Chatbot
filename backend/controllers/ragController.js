@@ -18,12 +18,97 @@ function getActiveDimensions() {
   return 0;
 }
 
-const CHUNK_SIZE       = 1000;
-const CHUNK_OVERLAP    = 100;
+const CHUNK_SIZE       = 2000;
+const CHUNK_OVERLAP    = 200;
 const MIN_CHUNK_LENGTH = 50;
 
 const LibraryFile  = require('../models/LibraryFile');
 const LibraryChunk = require('../models/LibraryChunk');
+
+
+const { Worker } = require('worker_threads');
+const path       = require('path');
+
+const WORKER_POOL_SIZE = parseInt(process.env.WORKER_POOL_SIZE) || 3;
+const workerPool       = [];
+let   indexQueue       = null;
+
+class SimpleQueue {
+  constructor(concurrency) {
+    this.concurrency = concurrency;
+    this.running     = 0;
+    this.queued      = [];
+  }
+  add(fn) {
+    return new Promise((resolve, reject) => {
+      this.queued.push({ fn, resolve, reject });
+      this._next();
+    });
+  }
+  _next() {
+    while (this.running < this.concurrency && this.queued.length > 0) {
+      const { fn, resolve, reject } = this.queued.shift();
+      this.running++;
+      Promise.resolve()
+        .then(fn)
+        .then(resolve, reject)
+        .finally(() => {
+          this.running--;
+          this._next();
+        });
+    }
+  }
+}
+
+async function initWorkerPool() {
+  console.log(`[RAG] Spawning ${WORKER_POOL_SIZE} embedding workers...`);
+  const workerPath = path.join(__dirname, '..', 'workers', 'embedWorker.js');
+
+  await Promise.all(
+    Array.from({ length: WORKER_POOL_SIZE }, async () => {
+      const worker = await spawnWorker(workerPath);
+      workerPool.push({ worker, busy: false });
+    })
+  );
+
+  indexQueue = new SimpleQueue(WORKER_POOL_SIZE);
+  console.log(`[RAG] ✅ Worker pool ready: ${workerPool.length} workers.`);
+}
+
+function spawnWorker(workerPath) {
+  return new Promise((resolve, reject) => {
+    const w = new Worker(workerPath, { workerData: { modelName: XENOVA_MODEL } });
+    const onMessage = (msg) => {
+      if (msg.type === 'ready') {
+        w.off('message', onMessage);
+        resolve(w);
+      } else if (msg.type === 'load-error') {
+        w.off('message', onMessage);
+        reject(new Error(msg.message));
+      }
+    };
+    w.on('message', onMessage);
+    w.once('error', reject);
+  });
+}
+
+function embedChunksOnWorker(slot, chunks, filename) {
+  return new Promise((resolve, reject) => {
+    const handler = (msg) => {
+      if (msg.type === 'progress') {
+        console.log(`[RAG worker] "${filename}": ${msg.done}/${msg.total} chunks embedded`);
+      } else if (msg.type === 'result') {
+        slot.worker.off('message', handler);
+        resolve(msg.vectors);
+      } else if (msg.type === 'error') {
+        slot.worker.off('message', handler);
+        reject(new Error(msg.message));
+      }
+    };
+    slot.worker.on('message', handler);
+    slot.worker.postMessage({ type: 'embed', chunks });
+  });
+}
 
 async function loadXenova() {
   const { pipeline } = await import('@xenova/transformers');
@@ -45,6 +130,14 @@ async function loadEmbedder() {
     activeEmbedder = 'xenova';
     embedderReady  = true;
     console.log(`[RAG] ✅ Using XENOVA (local). Model: ${XENOVA_MODEL}, dimensions: ${XENOVA_DIMENSIONS}.`);
+
+    try {
+      await initWorkerPool();
+    } catch (poolErr) {
+      console.warn('[RAG] Worker pool failed to start:', poolErr.message);
+      console.warn('[RAG] Indexing will run on the main thread (slower).');
+    }
+
     return;
   } catch (xenovaErr) {
     console.warn('[RAG] Xenova failed to load:', xenovaErr.message);
@@ -132,6 +225,7 @@ async function embedText(text, inputType = 'document') {
   return callVoyageAPI(text, inputType);
 }
 
+
 async function indexDocument(text, userId, filename, size) {
 
   if (!isEmbedderReady()) {
@@ -162,24 +256,36 @@ async function indexDocument(text, userId, filename, size) {
 
   console.log(`[RAG] Split into ${chunks.length} chunks of up to ${CHUNK_SIZE} chars each.`);
 
-  const records = [];
-  for (let i = 0; i < chunks.length; i++) {
-
-    if (i % 10 === 0) {
-      console.log(`[RAG] Embedding chunk ${i + 1}/${chunks.length}...`);
-    }
-
-    const vector = await embedText(chunks[i], 'document');
-
-    records.push({
-      libraryFileId: libraryFile._id,
-      userId,
-      chunkIndex: i,
-      text:       chunks[i],
-      vector,
-      embedder:   activeEmbedder
+  let vectors;
+  if (activeEmbedder === 'xenova' && indexQueue && workerPool.length > 0) {
+    vectors = await indexQueue.add(async () => {
+      const slot = workerPool.find(s => !s.busy);
+      slot.busy = true;
+      console.log(`[RAG] Assigned worker (pool size ${WORKER_POOL_SIZE}) for "${filename}"`);
+      try {
+        return await embedChunksOnWorker(slot, chunks, filename);
+      } finally {
+        slot.busy = false;
+      }
     });
+  } else {
+    vectors = [];
+    for (let i = 0; i < chunks.length; i++) {
+      if (i % 10 === 0) {
+        console.log(`[RAG] Embedding chunk ${i + 1}/${chunks.length}...`);
+      }
+      vectors.push(await embedText(chunks[i], 'document'));
+    }
   }
+
+  const records = chunks.map((chunkText, i) => ({
+    libraryFileId: libraryFile._id,
+    userId,
+    chunkIndex: i,
+    text:       chunkText,
+    vector:     vectors[i],
+    embedder:   activeEmbedder
+  }));
 
   await LibraryChunk.insertMany(records);
 
