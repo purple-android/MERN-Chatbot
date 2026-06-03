@@ -2,6 +2,7 @@ const Conversation = require('../models/Conversation');
 
 const LibraryChunk = require('../models/LibraryChunk');
 const { retrieveChunks } = require('./ragController');
+const { getCachedChunks, setCachedChunks } = require('../utils/cache');
 
 const Groq = require('groq-sdk');
 
@@ -124,7 +125,14 @@ const sendMessage = async (req, res) => {
 
     if (libraryChunkCount > 0) {
       try {
-        const chunks = await retrieveChunks(currentMsg.content, req.user._id, 5);
+        let chunks = await getCachedChunks(req.user._id, currentMsg.content);
+
+        if (chunks) {
+          console.log('[Chat] RAG cache HIT — reusing saved search result.');
+        } else {
+          chunks = await retrieveChunks(currentMsg.content, req.user._id, 5);
+          await setCachedChunks(req.user._id, currentMsg.content, chunks);
+        }
 
         if (chunks.length > 0) {
           const contextBlock = chunks

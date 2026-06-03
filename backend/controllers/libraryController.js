@@ -2,6 +2,7 @@ const LibraryFile = require('../models/LibraryFile');
 const LibraryChunk = require('../models/LibraryChunk');
 const { extractTextFromFile } = require('./uploadController');
 const { indexDocument } = require('./ragController');
+const { clearUserCache } = require('../utils/cache');
 
 const uploadFile = async (req, res) => {
   try {
@@ -18,6 +19,8 @@ const uploadFile = async (req, res) => {
       req.file.originalname,
       req.file.size
     );
+
+    await clearUserCache(req.user._id);
 
     res.json({
       success:       true,
@@ -67,6 +70,8 @@ const deleteFile = async (req, res) => {
     await LibraryChunk.deleteMany({ libraryFileId: libraryFile._id });
 
     await LibraryFile.findByIdAndDelete(req.params.id);
+
+    await clearUserCache(req.user._id);
 
     res.json({ success: true });
 
