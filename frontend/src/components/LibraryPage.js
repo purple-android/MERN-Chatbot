@@ -27,6 +27,8 @@ function LibraryPage() {
 
   const [uploadError, setUploadError] = useState(null);
 
+  const [cancelUpload, setCancelUpload] = useState(null);
+
   useEffect(() => {
     loadFiles();
   }, []);
@@ -50,13 +52,25 @@ function LibraryPage() {
 
     setUploadStatus({ phase: 'uploading', percent: 0, filename: file.name });
 
-    const result = await uploadLibraryFile(file, (progress) => {
-      setUploadStatus({ ...progress, filename: file.name });
-    });
+    const result = await uploadLibraryFile(
+      file,
+      (progress) => {
+        setUploadStatus({ ...progress, filename: file.name });
+      },
+      (cancelFn) => {
+        setCancelUpload(() => cancelFn);
+      }
+    );
 
     setUploadStatus(null);
+    setCancelUpload(null);
 
     e.target.value = '';
+
+    if (result.cancelled) {
+      setUploadError('Upload cancelled.');
+      return;
+    }
 
     if (result.error) {
       setUploadError(result.error);
@@ -64,6 +78,10 @@ function LibraryPage() {
     }
 
     loadFiles();
+  }
+
+  function handleCancel() {
+    if (cancelUpload) cancelUpload();
   }
 
   async function handleDelete(id, filename) {
@@ -120,6 +138,14 @@ function LibraryPage() {
                 }}
               />
             </div>
+
+            <button
+              type="button"
+              className="upload-cancel-btn"
+              onClick={handleCancel}
+            >
+              Cancel
+            </button>
           </div>
         ) : (
 

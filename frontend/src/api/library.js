@@ -24,10 +24,16 @@ export async function deleteLibraryFile(id) {
   }
 }
 
-export function uploadLibraryFile(file, onProgress) {
+export function uploadLibraryFile(file, onProgress, onCancelReady) {
   return new Promise((resolve) => {
     const xhr = new XMLHttpRequest();
+
+    const uploadId = (window.crypto && window.crypto.randomUUID)
+      ? window.crypto.randomUUID()
+      : String(Date.now()) + Math.random().toString(16).slice(2);
+
     const formData = new FormData();
+    formData.append('uploadId', uploadId);
     formData.append('file', file);
 
     xhr.upload.addEventListener('progress', (e) => {
@@ -55,8 +61,26 @@ export function uploadLibraryFile(file, onProgress) {
       resolve({ error: 'Network error — could not reach the server.' });
     });
 
+    xhr.addEventListener('abort', () => {
+      resolve({ cancelled: true });
+    });
+
     xhr.open('POST', '/api/library/upload');
     xhr.setRequestHeader('Authorization', `Bearer ${localStorage.getItem('token')}`);
     xhr.send(formData);
+
+    if (onCancelReady) {
+      onCancelReady(async () => {
+        try {
+          await fetch(`/api/library/cancel/${uploadId}`, {
+            method:  'POST',
+            headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+          });
+        } catch (e) {
+          // best effort
+        }
+        xhr.abort();
+      });
+    }
   });
 }

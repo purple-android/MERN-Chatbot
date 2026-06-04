@@ -33,6 +33,11 @@ const libraryFileSchema = new mongoose.Schema({
   error: {
     type:    String,
     default: null
+  },
+
+  sourceText: {
+    type:    String,
+    default: undefined
   }
 
 }, {

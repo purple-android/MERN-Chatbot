@@ -6,7 +6,8 @@ const upload = require('../middleware/upload');
 const {
   uploadFile,
   listFiles,
-  deleteFile
+  deleteFile,
+  cancelUpload
 } = require('../controllers/libraryController');
 
 router.use(requireAuth);
@@ -29,6 +30,7 @@ router.post('/upload', (req, res, next) => {
 
 }, uploadFile);
 
+router.post('/cancel/:uploadId', cancelUpload);
 router.get('/', listFiles);
 router.delete('/:id', deleteFile);
 

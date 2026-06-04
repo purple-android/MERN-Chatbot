@@ -1528,6 +1528,23 @@ body {
   animation: pulse-purple 1.5s ease-in-out infinite;
 }
 
+.upload-cancel-btn {
+  margin-top: 12px;
+  padding: 7px 16px;
+  background: transparent;
+  color: #ff8585;
+  border: 1px solid #5a2a2a;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.upload-cancel-btn:hover {
+  background: #2a1414;
+  border-color: #ff8585;
+}
+
 @keyframes pulse-purple {
   0%, 100% { background: #7c6af7; opacity: 1; }
   50%      { background: #a89cf7; opacity: 0.6; }

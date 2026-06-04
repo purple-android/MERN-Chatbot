@@ -4,10 +4,25 @@ const { extractTextFromFile } = require('./uploadController');
 const { indexDocument } = require('./ragController');
 const { clearUserCache } = require('../utils/cache');
 
+const activeUploads = new Map();
+
 const uploadFile = async (req, res) => {
+
+  const cancelToken = { cancelled: false };
+  let responded = false;
+  res.on('close', () => {
+    if (!responded) cancelToken.cancelled = true;
+  });
+
+  const uploadId = req.body && req.body.uploadId;
+  if (uploadId) {
+    activeUploads.set(uploadId, cancelToken);
+  }
+
   try {
 
     if (!req.file) {
+      responded = true;
       return res.status(400).json({ error: 'No file was uploaded.' });
     }
 
@@ -17,11 +32,13 @@ const uploadFile = async (req, res) => {
       text,
       req.user._id,
       req.file.originalname,
-      req.file.size
+      req.file.size,
+      cancelToken
     );
 
     await clearUserCache(req.user._id);
 
+    responded = true;
     res.json({
       success:       true,
       libraryFileId: libraryFile._id,
@@ -31,9 +48,32 @@ const uploadFile = async (req, res) => {
     });
 
   } catch (err) {
+    if (err.cancelled) {
+      console.log('[Library] Upload cancelled by the user — partial data removed.');
+      return;
+    }
+
     console.error('[Library] Upload failed:', err.message);
-    res.status(400).json({ error: err.message || 'Failed to upload the file.' });
+    if (!responded && !res.writableEnded) {
+      responded = true;
+      res.status(400).json({ error: err.message || 'Failed to upload the file.' });
+    }
+  } finally {
+    if (uploadId) activeUploads.delete(uploadId);
   }
+};
+
+const cancelUpload = async (req, res) => {
+  const { uploadId } = req.params;
+
+  const token = activeUploads.get(uploadId);
+  if (token) {
+    token.cancelled = true;
+    console.log(`[Library] Cancel requested for upload ${uploadId}.`);
+    return res.json({ success: true, cancelling: true });
+  }
+
+  return res.json({ success: true, cancelling: false });
 };
 
 const listFiles = async (req, res) => {
@@ -81,4 +121,4 @@ const deleteFile = async (req, res) => {
   }
 };
 
-module.exports = { uploadFile, listFiles, deleteFile };
+module.exports = { uploadFile, listFiles, deleteFile, cancelUpload };

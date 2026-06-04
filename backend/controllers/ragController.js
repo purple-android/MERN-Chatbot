@@ -22,6 +22,9 @@ const CHUNK_SIZE       = 2000;
 const CHUNK_OVERLAP    = 200;
 const MIN_CHUNK_LENGTH = 50;
 
+const SAVE_BATCH_SIZE      = 50;
+const RESUMABLE_TEXT_LIMIT = 15000000;
+
 const LibraryFile  = require('../models/LibraryFile');
 const LibraryChunk = require('../models/LibraryChunk');
 
@@ -226,25 +229,7 @@ async function embedText(text, inputType = 'document') {
 }
 
 
-async function indexDocument(text, userId, filename, size) {
-
-  if (!isEmbedderReady()) {
-    throw new Error('Embedder is not ready yet — try again in a moment.');
-  }
-  if (!text || !text.trim()) {
-    throw new Error('Cannot index a document with no text.');
-  }
-
-  const libraryFile = await LibraryFile.create({
-    userId,
-    filename,
-    size:       size || 0,
-    chunkCount: 0,
-    status:     'indexing'
-  });
-
-  console.log(`[RAG] Starting indexing for "${filename}" (LibraryFile _id: ${libraryFile._id})`);
-
+function splitIntoChunks(text) {
   const chunks = [];
   const step   = CHUNK_SIZE - CHUNK_OVERLAP;
 
@@ -254,50 +239,166 @@ async function indexDocument(text, userId, filename, size) {
     chunks.push(chunk);
   }
 
-  console.log(`[RAG] Split into ${chunks.length} chunks of up to ${CHUNK_SIZE} chars each.`);
+  return chunks;
+}
 
-  let vectors;
+async function embedBatch(texts, label) {
   if (activeEmbedder === 'xenova' && indexQueue && workerPool.length > 0) {
-    vectors = await indexQueue.add(async () => {
+    return indexQueue.add(async () => {
       const slot = workerPool.find(s => !s.busy);
       slot.busy = true;
-      console.log(`[RAG] Assigned worker (pool size ${WORKER_POOL_SIZE}) for "${filename}"`);
       try {
-        return await embedChunksOnWorker(slot, chunks, filename);
+        return await embedChunksOnWorker(slot, texts, label);
       } finally {
         slot.busy = false;
       }
     });
-  } else {
-    vectors = [];
-    for (let i = 0; i < chunks.length; i++) {
-      if (i % 10 === 0) {
-        console.log(`[RAG] Embedding chunk ${i + 1}/${chunks.length}...`);
-      }
-      vectors.push(await embedText(chunks[i], 'document'));
-    }
   }
 
-  const records = chunks.map((chunkText, i) => ({
-    libraryFileId: libraryFile._id,
-    userId,
-    chunkIndex: i,
-    text:       chunkText,
-    vector:     vectors[i],
-    embedder:   activeEmbedder
-  }));
+  const vectors = [];
+  for (const t of texts) {
+    vectors.push(await embedText(t, 'document'));
+  }
+  return vectors;
+}
 
-  await LibraryChunk.insertMany(records);
+async function embedAndSaveChunks(libraryFile, text, cancelToken) {
 
-  console.log(`[RAG] Saved ${records.length} chunks to MongoDB.`);
+  const chunks = splitIntoChunks(text);
+  console.log(`[RAG] "${libraryFile.filename}" → ${chunks.length} chunks.`);
 
-  libraryFile.chunkCount = records.length;
+  const existing = await LibraryChunk
+    .find({ libraryFileId: libraryFile._id }, 'chunkIndex embedder')
+    .lean();
+
+  let doneSet = new Set(existing.map(c => c.chunkIndex));
+
+  if (existing.length > 0 && existing[0].embedder !== activeEmbedder) {
+    console.warn(
+      `[RAG] Embedder changed (${existing[0].embedder} → ${activeEmbedder}) — ` +
+      `re-indexing "${libraryFile.filename}" from scratch.`
+    );
+    await LibraryChunk.deleteMany({ libraryFileId: libraryFile._id });
+    doneSet = new Set();
+  }
+
+  if (doneSet.size > 0) {
+    console.log(`[RAG] Resuming "${libraryFile.filename}" — ${doneSet.size}/${chunks.length} chunks already saved.`);
+  }
+
+  for (let start = 0; start < chunks.length; start += SAVE_BATCH_SIZE) {
+
+    if (cancelToken && cancelToken.cancelled) {
+      await LibraryChunk.deleteMany({ libraryFileId: libraryFile._id });
+      await LibraryFile.findByIdAndDelete(libraryFile._id);
+      console.log(`[RAG] Indexing cancelled for "${libraryFile.filename}" — removed partial data.`);
+      const cancelErr = new Error('Indexing cancelled by the user.');
+      cancelErr.cancelled = true;
+      throw cancelErr;
+    }
+
+    const end = Math.min(start + SAVE_BATCH_SIZE, chunks.length);
+
+    const batchIndexes = [];
+    const batchTexts   = [];
+    for (let j = start; j < end; j++) {
+      if (doneSet.has(j)) continue;
+      batchIndexes.push(j);
+      batchTexts.push(chunks[j]);
+    }
+
+    if (batchTexts.length === 0) continue;
+
+    const vectors = await embedBatch(batchTexts, libraryFile.filename);
+
+    const records = batchTexts.map((t, k) => ({
+      libraryFileId: libraryFile._id,
+      userId:        libraryFile.userId,
+      chunkIndex:    batchIndexes[k],
+      text:          t,
+      vector:        vectors[k],
+      embedder:      activeEmbedder
+    }));
+
+    await LibraryChunk.insertMany(records);
+
+    const savedSoFar = await LibraryChunk.countDocuments({ libraryFileId: libraryFile._id });
+    libraryFile.chunkCount = savedSoFar;
+    await libraryFile.save();
+
+    console.log(`[RAG] "${libraryFile.filename}": saved ${savedSoFar}/${chunks.length} chunks.`);
+  }
+
+  libraryFile.chunkCount = await LibraryChunk.countDocuments({ libraryFileId: libraryFile._id });
   libraryFile.status     = 'ready';
+  libraryFile.sourceText = undefined;
   await libraryFile.save();
 
-  console.log(`[RAG] Indexing complete for "${filename}".`);
+  console.log(`[RAG] ✅ Indexing complete for "${libraryFile.filename}".`);
+}
+
+async function indexDocument(text, userId, filename, size, cancelToken) {
+
+  if (!isEmbedderReady()) {
+    throw new Error('Embedder is not ready yet — try again in a moment.');
+  }
+  if (!text || !text.trim()) {
+    throw new Error('Cannot index a document with no text.');
+  }
+
+  const storedText = text.length <= RESUMABLE_TEXT_LIMIT ? text : undefined;
+  if (!storedText) {
+    console.warn(`[RAG] "${filename}" text is very large (${text.length} chars) — not storing it, so this file won't be resumable.`);
+  }
+
+  const libraryFile = await LibraryFile.create({
+    userId,
+    filename,
+    size:       size || 0,
+    chunkCount: 0,
+    status:     'indexing',
+    sourceText: storedText
+  });
+
+  console.log(`[RAG] Starting indexing for "${filename}" (LibraryFile _id: ${libraryFile._id})`);
+
+  await embedAndSaveChunks(libraryFile, text, cancelToken);
 
   return libraryFile;
+}
+
+async function resumeUnfinishedIndexing() {
+
+  if (!isEmbedderReady()) {
+    console.warn('[RAG] Skipping resume — no embedder is ready.');
+    return;
+  }
+
+  const stuck = await LibraryFile.find({ status: 'indexing' });
+  if (stuck.length === 0) return;
+
+  console.log(`[RAG] Found ${stuck.length} unfinished file(s) from a previous run — resuming...`);
+
+  for (const lf of stuck) {
+
+    if (!lf.sourceText) {
+      console.warn(`[RAG] Cannot resume "${lf.filename}" — its text wasn't stored. Marking as failed.`);
+      lf.status = 'failed';
+      lf.error  = 'Indexing was interrupted and could not be resumed (source text was not stored).';
+      await lf.save();
+      continue;
+    }
+
+    try {
+      console.log(`[RAG] Resuming "${lf.filename}"...`);
+      await embedAndSaveChunks(lf, lf.sourceText);
+    } catch (err) {
+      console.error(`[RAG] Resume failed for "${lf.filename}":`, err.message);
+      lf.status = 'failed';
+      lf.error  = err.message;
+      await lf.save();
+    }
+  }
 }
 
 function cosineSimilarity(a, b) {
@@ -368,4 +469,4 @@ async function retrieveChunks(question, userId, k = 5) {
   return enriched;
 }
 
-module.exports = { loadEmbedder, embedText, isEmbedderReady, indexDocument, retrieveChunks };
+module.exports = { loadEmbedder, embedText, isEmbedderReady, indexDocument, retrieveChunks, resumeUnfinishedIndexing };

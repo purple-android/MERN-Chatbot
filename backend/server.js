@@ -20,7 +20,7 @@ const transcribeRoutes = require('./routes/transcribeRoutes');
 const summarizeRoutes = require('./routes/summarizeRoutes');
 const libraryRoutes = require('./routes/libraryRoutes');
 
-const { loadEmbedder } = require('./controllers/ragController');
+const { loadEmbedder, resumeUnfinishedIndexing } = require('./controllers/ragController');
 
 const app = express();
 
@@ -89,6 +89,10 @@ connectToMongo()
 
     try {
       await loadEmbedder();
+
+      resumeUnfinishedIndexing().catch(err =>
+        console.error('[RAG] Resume pass failed:', err.message)
+      );
     } catch (embedderErr) {
       console.error('[RAG] Embedder failed to load:', embedderErr.message);
       console.error('[RAG] Server will still start, but Library / RAG features will not work until this is fixed.');
