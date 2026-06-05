@@ -45,39 +45,62 @@ function LibraryPage() {
 
   async function handleFileSelect(e) {
 
-    const file = e.target.files[0];
-    if (!file) return;
+    const files = Array.from(e.target.files);
+    if (files.length === 0) return;
 
     setUploadError(null);
 
-    setUploadStatus({ phase: 'uploading', percent: 0, filename: file.name });
+    const errors = [];
+    let cancelled = false;
 
-    const result = await uploadLibraryFile(
-      file,
-      (progress) => {
-        setUploadStatus({ ...progress, filename: file.name });
-      },
-      (cancelFn) => {
-        setCancelUpload(() => cancelFn);
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+
+      setUploadStatus({
+        phase:     'uploading',
+        percent:   0,
+        filename:  file.name,
+        fileIndex: i + 1,
+        fileTotal: files.length
+      });
+
+      const result = await uploadLibraryFile(
+        file,
+        (progress) => {
+          setUploadStatus({
+            ...progress,
+            filename:  file.name,
+            fileIndex: i + 1,
+            fileTotal: files.length
+          });
+        },
+        (cancelFn) => {
+          setCancelUpload(() => cancelFn);
+        }
+      );
+
+      if (result.cancelled) {
+        cancelled = true;
+        break;
       }
-    );
+
+      if (result.error) {
+        errors.push(`${file.name}: ${result.error}`);
+      }
+
+      loadFiles();
+    }
 
     setUploadStatus(null);
     setCancelUpload(null);
 
     e.target.value = '';
 
-    if (result.cancelled) {
+    if (cancelled) {
       setUploadError('Upload cancelled.');
-      return;
+    } else if (errors.length > 0) {
+      setUploadError(errors.join('   |   '));
     }
-
-    if (result.error) {
-      setUploadError(result.error);
-      return;
-    }
-
-    loadFiles();
   }
 
   function handleCancel() {
@@ -118,6 +141,8 @@ function LibraryPage() {
             <div className="upload-progress-info">
               <span className="upload-progress-filename">
               <FileText size={14} /> {uploadStatus.filename}
+              {uploadStatus.fileTotal > 1 &&
+                ` (file ${uploadStatus.fileIndex} of ${uploadStatus.fileTotal})`}
             </span>
               <span className="upload-progress-status">
 
@@ -153,12 +178,13 @@ function LibraryPage() {
             <input
               type="file"
               accept=".txt,.pdf,.doc,.docx"
+              multiple
               onChange={handleFileSelect}
               style={{ display: 'none' }}
             />
             <Upload size={28} className="upload-button-icon" />
-            <span className="upload-button-text">Choose a file to upload</span>
-            <span className="upload-button-hint">PDF, DOCX, DOC, or TXT (max 100MB)</span>
+            <span className="upload-button-text">Choose file(s) to upload</span>
+            <span className="upload-button-hint">PDF, DOCX, DOC, or TXT (max 100MB each — you can pick several)</span>
           </label>
         )}
 
