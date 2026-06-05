@@ -12,12 +12,6 @@ const VOYAGE_API_URL = 'https://api.voyageai.com/v1/embeddings';
 
 const VOYAGE_TIMEOUT_MS = 30000;
 
-function getActiveDimensions() {
-  if (activeEmbedder === 'xenova') return XENOVA_DIMENSIONS;
-  if (activeEmbedder === 'voyage') return VOYAGE_DIMENSIONS;
-  return 0;
-}
-
 const CHUNK_SIZE       = 2000;
 const CHUNK_OVERLAP    = 200;
 const MIN_CHUNK_LENGTH = 50;
@@ -27,12 +21,14 @@ const RESUMABLE_TEXT_LIMIT = 15000000;
 
 const LibraryFile  = require('../models/LibraryFile');
 const LibraryChunk = require('../models/LibraryChunk');
+const { clearUserCache } = require('../utils/cache');
 
 
 const { Worker } = require('worker_threads');
 const path       = require('path');
 
 const WORKER_POOL_SIZE = parseInt(process.env.WORKER_POOL_SIZE) || 3;
+const WORKER_PATH      = path.join(__dirname, '..', 'workers', 'embedWorker.js');
 const workerPool       = [];
 let   indexQueue       = null;
 
@@ -65,17 +61,30 @@ class SimpleQueue {
 
 async function initWorkerPool() {
   console.log(`[RAG] Spawning ${WORKER_POOL_SIZE} embedding workers...`);
-  const workerPath = path.join(__dirname, '..', 'workers', 'embedWorker.js');
 
   await Promise.all(
-    Array.from({ length: WORKER_POOL_SIZE }, async () => {
-      const worker = await spawnWorker(workerPath);
-      workerPool.push({ worker, busy: false });
-    })
+    Array.from({ length: WORKER_POOL_SIZE }, () => addWorkerToPool())
   );
 
   indexQueue = new SimpleQueue(WORKER_POOL_SIZE);
   console.log(`[RAG] ✅ Worker pool ready: ${workerPool.length} workers.`);
+}
+
+async function addWorkerToPool() {
+  const worker = await spawnWorker(WORKER_PATH);
+  const slot = { worker, busy: false };
+
+  worker.once('exit', (code) => {
+    if (code === 0) return;
+    console.warn(`[RAG] Worker died (exit code ${code}) — respawning a replacement.`);
+    const idx = workerPool.indexOf(slot);
+    if (idx !== -1) workerPool.splice(idx, 1);
+    addWorkerToPool().catch(err =>
+      console.error('[RAG] Failed to respawn worker:', err.message)
+    );
+  });
+
+  workerPool.push(slot);
 }
 
 function spawnWorker(workerPath) {
@@ -97,18 +106,33 @@ function spawnWorker(workerPath) {
 
 function embedChunksOnWorker(slot, chunks, filename) {
   return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      slot.worker.off('message', handler);
+      slot.worker.off('error', onError);
+      slot.worker.off('exit', onExit);
+    };
     const handler = (msg) => {
       if (msg.type === 'progress') {
         console.log(`[RAG worker] "${filename}": ${msg.done}/${msg.total} chunks embedded`);
       } else if (msg.type === 'result') {
-        slot.worker.off('message', handler);
+        cleanup();
         resolve(msg.vectors);
       } else if (msg.type === 'error') {
-        slot.worker.off('message', handler);
+        cleanup();
         reject(new Error(msg.message));
       }
     };
+    const onError = (err) => {
+      cleanup();
+      reject(new Error(`Worker crashed during embedding: ${err.message}`));
+    };
+    const onExit = (code) => {
+      cleanup();
+      reject(new Error(`Worker exited during embedding (code ${code}).`));
+    };
     slot.worker.on('message', handler);
+    slot.worker.once('error', onError);
+    slot.worker.once('exit', onExit);
     slot.worker.postMessage({ type: 'embed', chunks });
   });
 }
@@ -229,14 +253,18 @@ async function embedText(text, inputType = 'document') {
 }
 
 
-function splitIntoChunks(text) {
+async function splitIntoChunks(text) {
   const chunks = [];
   const step   = CHUNK_SIZE - CHUNK_OVERLAP;
+  let made     = 0;
 
   for (let i = 0; i < text.length; i += step) {
     const chunk = text.slice(i, i + CHUNK_SIZE);
     if (chunk.trim().length < MIN_CHUNK_LENGTH) continue;
     chunks.push(chunk);
+    if (++made % 1000 === 0) {
+      await new Promise(resolve => setImmediate(resolve));
+    }
   }
 
   return chunks;
@@ -245,8 +273,12 @@ function splitIntoChunks(text) {
 async function embedBatch(texts, label) {
   if (activeEmbedder === 'xenova' && indexQueue && workerPool.length > 0) {
     return indexQueue.add(async () => {
-      const slot = workerPool.find(s => !s.busy);
-      slot.busy = true;
+      const slot = acquireFreeWorker();
+      if (!slot) {
+        const vectors = [];
+        for (const t of texts) vectors.push(await embedText(t, 'document'));
+        return vectors;
+      }
       try {
         return await embedChunksOnWorker(slot, texts, label);
       } finally {
@@ -262,9 +294,41 @@ async function embedBatch(texts, label) {
   return vectors;
 }
 
+function acquireFreeWorker() {
+  if (activeEmbedder !== 'xenova') return null;
+  const slot = workerPool.find(s => !s.busy);
+  if (!slot) return null;
+  slot.busy = true;
+  return slot;
+}
+
+async function embedQuery(question) {
+  const slot = acquireFreeWorker();
+  if (slot) {
+    try {
+      const vectors = await embedChunksOnWorker(slot, [question], 'query');
+      return vectors[0];
+    } finally {
+      slot.busy = false;
+    }
+  }
+  return embedText(question, 'query');
+}
+
 async function embedAndSaveChunks(libraryFile, text, cancelToken) {
 
-  const chunks = splitIntoChunks(text);
+  const bailIfCancelled = async () => {
+    if (cancelToken && cancelToken.cancelled) {
+      await LibraryChunk.deleteMany({ libraryFileId: libraryFile._id });
+      await LibraryFile.findByIdAndDelete(libraryFile._id);
+      console.log(`[RAG] Indexing cancelled for "${libraryFile.filename}" — removed partial data.`);
+      const cancelErr = new Error('Indexing cancelled by the user.');
+      cancelErr.cancelled = true;
+      throw cancelErr;
+    }
+  };
+
+  const chunks = await splitIntoChunks(text);
   console.log(`[RAG] "${libraryFile.filename}" → ${chunks.length} chunks.`);
 
   const existing = await LibraryChunk
@@ -288,14 +352,7 @@ async function embedAndSaveChunks(libraryFile, text, cancelToken) {
 
   for (let start = 0; start < chunks.length; start += SAVE_BATCH_SIZE) {
 
-    if (cancelToken && cancelToken.cancelled) {
-      await LibraryChunk.deleteMany({ libraryFileId: libraryFile._id });
-      await LibraryFile.findByIdAndDelete(libraryFile._id);
-      console.log(`[RAG] Indexing cancelled for "${libraryFile.filename}" — removed partial data.`);
-      const cancelErr = new Error('Indexing cancelled by the user.');
-      cancelErr.cancelled = true;
-      throw cancelErr;
-    }
+    await bailIfCancelled();
 
     const end = Math.min(start + SAVE_BATCH_SIZE, chunks.length);
 
@@ -310,6 +367,8 @@ async function embedAndSaveChunks(libraryFile, text, cancelToken) {
     if (batchTexts.length === 0) continue;
 
     const vectors = await embedBatch(batchTexts, libraryFile.filename);
+
+    await bailIfCancelled();
 
     const records = batchTexts.map((t, k) => ({
       libraryFileId: libraryFile._id,
@@ -362,7 +421,20 @@ async function indexDocument(text, userId, filename, size, cancelToken) {
 
   console.log(`[RAG] Starting indexing for "${filename}" (LibraryFile _id: ${libraryFile._id})`);
 
-  await embedAndSaveChunks(libraryFile, text, cancelToken);
+  try {
+    await embedAndSaveChunks(libraryFile, text, cancelToken);
+  } catch (err) {
+    if (!err.cancelled) {
+      try {
+        libraryFile.status = 'failed';
+        libraryFile.error  = err.message;
+        await libraryFile.save();
+      } catch (saveErr) {
+        console.error(`[RAG] Could not mark "${filename}" as failed:`, saveErr.message);
+      }
+    }
+    throw err;
+  }
 
   return libraryFile;
 }
@@ -392,6 +464,7 @@ async function resumeUnfinishedIndexing() {
     try {
       console.log(`[RAG] Resuming "${lf.filename}"...`);
       await embedAndSaveChunks(lf, lf.sourceText);
+      await clearUserCache(lf.userId);
     } catch (err) {
       console.error(`[RAG] Resume failed for "${lf.filename}":`, err.message);
       lf.status = 'failed';
@@ -429,7 +502,7 @@ async function retrieveChunks(question, userId, k = 5) {
     throw new Error('Embedder is not ready — cannot retrieve chunks.');
   }
 
-  const queryVector = await embedText(question, 'query');
+  const queryVector = await embedQuery(question);
 
   const chunks = await LibraryChunk
     .find({ userId }, 'vector text chunkIndex libraryFileId')

@@ -1,5 +1,6 @@
 const path = require('path');
 const fs = require('fs');
+const fsp = require('fs').promises;
 const os = require('os');
 const { exec } = require('child_process');
 const { promisify } = require('util');
@@ -33,7 +34,7 @@ async function transcribeLocally(buffer, ext) {
     tempInput = path.join(os.tmpdir(), `whisper_in_${Date.now()}${ext}`);
     tempWav   = path.join(os.tmpdir(), `whisper_wav_${Date.now()}.wav`);
 
-    fs.writeFileSync(tempInput, buffer);
+    await fsp.writeFile(tempInput, buffer);
 
     let audioToSend    = buffer;
     let audioFilename  = `audio${ext}`;
@@ -50,7 +51,7 @@ async function transcribeLocally(buffer, ext) {
       const ffmpegCmd = `"${FFMPEG_EXE}" -i "${tempInput}" -ar 16000 -ac 1 -y "${tempWav}"`;
 
       await runCommand(ffmpegCmd);
-      audioToSend   = fs.readFileSync(tempWav);
+      audioToSend   = await fsp.readFile(tempWav);
       audioFilename = 'audio.wav';   // tell the server it's a WAV file now
       console.log('[Whisper] ffmpeg conversion succeeded');
 
@@ -92,8 +93,8 @@ async function transcribeLocally(buffer, ext) {
     }
 
   } finally {
-    if (tempInput && fs.existsSync(tempInput)) fs.unlinkSync(tempInput);
-    if (tempWav   && fs.existsSync(tempWav))   fs.unlinkSync(tempWav);
+    if (tempInput) await fsp.unlink(tempInput).catch(() => {});
+    if (tempWav)   await fsp.unlink(tempWav).catch(() => {});
   }
 }
 
@@ -106,7 +107,7 @@ async function transcribeWithGroq(buffer, ext) {
 
     tempPath = path.join(os.tmpdir(), `groq_audio_${Date.now()}${ext}`);
 
-    fs.writeFileSync(tempPath, buffer);
+    await fsp.writeFile(tempPath, buffer);
 
     const transcription = await groq.audio.transcriptions.create({
 
@@ -120,7 +121,7 @@ async function transcribeWithGroq(buffer, ext) {
     return transcription.text;
 
   } finally {
-    if (tempPath && fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+    if (tempPath) await fsp.unlink(tempPath).catch(() => {});
   }
 }
 

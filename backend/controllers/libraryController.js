@@ -107,6 +107,12 @@ const deleteFile = async (req, res) => {
       return res.status(403).json({ error: 'Access denied.' });
     }
 
+    if (libraryFile.status === 'indexing') {
+      return res.status(409).json({
+        error: 'This file is still being indexed. Cancel the upload first, then delete it.'
+      });
+    }
+
     await LibraryChunk.deleteMany({ libraryFileId: libraryFile._id });
 
     await LibraryFile.findByIdAndDelete(req.params.id);

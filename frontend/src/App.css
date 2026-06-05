@@ -1641,6 +1641,15 @@ body {
   color: #e88;
 }
 
+.library-status-error {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #d98a8a;
+  max-width: 220px;
+  white-space: normal;
+  word-break: break-word;
+}
+
 
 /* The × delete button on each file row */
 .library-delete-btn {

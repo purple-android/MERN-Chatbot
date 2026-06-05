@@ -225,9 +225,15 @@ function LibraryPage() {
                   <td>{file.chunkCount}</td>
                   <td>
 
-                    <span className={`library-status library-status-${file.status}`}>
+                    <span
+                      className={`library-status library-status-${file.status}`}
+                      title={file.error || ''}
+                    >
                       {file.status}
                     </span>
+                    {file.status === 'failed' && file.error && (
+                      <div className="library-status-error">{file.error}</div>
+                    )}
                   </td>
                   <td>
 
