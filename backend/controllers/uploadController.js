@@ -4,33 +4,77 @@ const Tesseract = require('tesseract.js');
 const mammoth = require('mammoth');
 const WordExtractor = require('word-extractor');
 
-async function extractTextWithOCR(buffer) {
+// Skip OCRing embedded images smaller than this (in PDF points). Tiny images are
+// usually logos/icons/lines — OCRing them wastes time and produces junk.
+const MIN_IMAGE_DIM = 40;
+
+async function extractTextFromPdf(buffer) {
 
   const mupdf = await import('mupdf');
 
   const doc = mupdf.Document.openDocument(new Uint8Array(buffer), 'application/pdf');
 
+  const pageCount = doc.countPages();
   let fullText = '';
 
-  for (let i = 0; i < doc.countPages(); i++) {
+  for (let i = 0; i < pageCount; i++) {
 
     const page = doc.loadPage(i);
 
-    const pixmap = page.toPixmap(
-      [1.5, 0, 0, 1.5, 0, 0],
-      mupdf.ColorSpace.DeviceRGB
-    );
+    let stext;
+    try {
+      stext = page.toStructuredText('preserve-images');
+    } catch (e) {
+      page.destroy?.();
+      continue;
+    }
 
-    const imageBuffer = Buffer.from(pixmap.asPNG());
+    const pageText = (stext.asText() || '').trim();
 
-    const { data: { text } } = await Tesseract.recognize(imageBuffer, 'eng', {
-      logger: () => {}
-    });
+    const imagePngs = [];
+    try {
+      stext.walk({
+        onImageBlock(bbox, transform, image) {
+          const width  = bbox[2] - bbox[0];
+          const height = bbox[3] - bbox[1];
+          if (width < MIN_IMAGE_DIM || height < MIN_IMAGE_DIM) return;
+          try {
+            const pixmap = image.toPixmap();
+            imagePngs.push(Buffer.from(pixmap.asPNG()));
+            pixmap.destroy?.();
+          } catch (imgErr) { /* skip this image */ }
+        }
+      });
+    } catch (walkErr) { /* keep whatever pageText we got */ }
 
-    fullText += text + '\n';
+    stext.destroy?.();
+    page.destroy?.();
+
+    let imageText = '';
+    for (const png of imagePngs) {
+      try {
+        const { data: { text } } = await Tesseract.recognize(png, 'eng', {
+          logger: () => {}
+        });
+        const trimmed = (text || '').trim();
+        if (trimmed) imageText += trimmed + '\n';
+      } catch (ocrErr) { /* skip this image */ }
+    }
+
+    if (pageText)  fullText += pageText + '\n';
+    if (imageText) fullText += imageText + '\n';
   }
 
-  return fullText.trim();
+  fullText = fullText.trim();
+
+  if (!fullText) {
+    try {
+      const result = await pdfParse(buffer);
+      fullText = (result.text || '').trim();
+    } catch (e) { /* leave empty */ }
+  }
+
+  return fullText;
 }
 
 async function extractTextFromFile(buffer, originalname) {
@@ -44,13 +88,7 @@ async function extractTextFromFile(buffer, originalname) {
 
   } else if (ext === '.pdf') {
 
-    const result = await pdfParse(buffer);
-    text = result.text.trim();
-
-    if (text.length < 50) {
-      console.log('pdf-parse found little text — switching to OCR for image-based PDF');
-      text = await extractTextWithOCR(buffer);
-    }
+    text = await extractTextFromPdf(buffer);
 
   } else if (ext === '.docx') {
     const result = await mammoth.extractRawText({ buffer });
