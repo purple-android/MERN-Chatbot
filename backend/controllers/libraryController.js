@@ -4,7 +4,12 @@ const { extractTextFromFile } = require('./uploadController');
 const { indexDocument } = require('./ragController');
 const { clearUserCache } = require('../utils/cache');
 
+// Cancel handles for in-progress uploads, keyed two ways:
+//   activeUploads        — by the client-generated uploadId (used by the live Cancel button)
+//   activeUploadsByFileId — by the LibraryFile _id (used by the ✕/delete button, which is the
+//                           only handle the client still has after navigating away and back)
 const activeUploads = new Map();
+const activeUploadsByFileId = new Map();
 
 const uploadFile = async (req, res) => {
 
@@ -18,6 +23,8 @@ const uploadFile = async (req, res) => {
   if (uploadId) {
     activeUploads.set(uploadId, cancelToken);
   }
+
+  let registeredFileId = null;
 
   try {
 
@@ -33,7 +40,13 @@ const uploadFile = async (req, res) => {
       req.user._id,
       req.file.originalname,
       req.file.size,
-      cancelToken
+      cancelToken,
+      (lf) => {
+        // The LibraryFile now exists in the DB — register it so the delete button
+        // can cancel this job by file id even after the original page is gone.
+        registeredFileId = lf._id.toString();
+        activeUploadsByFileId.set(registeredFileId, cancelToken);
+      }
     );
 
     await clearUserCache(req.user._id);
@@ -50,6 +63,13 @@ const uploadFile = async (req, res) => {
   } catch (err) {
     if (err.cancelled) {
       console.log('[Library] Upload cancelled by the user — partial data removed.');
+      // Any cached RAG results may reference the now-deleted chunks — clear them.
+      await clearUserCache(req.user._id).catch(() => {});
+      // Close the request cleanly if the client is still connected.
+      if (!responded && !res.writableEnded) {
+        responded = true;
+        res.json({ cancelled: true });
+      }
       return;
     }
 
@@ -60,6 +80,7 @@ const uploadFile = async (req, res) => {
     }
   } finally {
     if (uploadId) activeUploads.delete(uploadId);
+    if (registeredFileId) activeUploadsByFileId.delete(registeredFileId);
   }
 };
 
@@ -108,9 +129,25 @@ const deleteFile = async (req, res) => {
     }
 
     if (libraryFile.status === 'indexing') {
-      return res.status(409).json({
-        error: 'This file is still being indexed. Cancel the upload first, then delete it.'
-      });
+      const token = activeUploadsByFileId.get(libraryFile._id.toString());
+
+      if (token) {
+        // Indexing is actively running on this server — signal it to stop. The indexing
+        // loop checks this flag between batches and removes its own partial data (chunks
+        // + the LibraryFile) before it exits.
+        token.cancelled = true;
+        await clearUserCache(req.user._id);
+        console.log(`[Library] Delete on indexing file "${libraryFile.filename}" — cancelling the upload.`);
+        return res.json({ success: true, cancelled: true });
+      }
+
+      // No active indexing task for this file (e.g. the server restarted mid-upload),
+      // so there's no loop to clean up after itself — remove the partial data directly.
+      await LibraryChunk.deleteMany({ libraryFileId: libraryFile._id });
+      await LibraryFile.findByIdAndDelete(req.params.id);
+      await clearUserCache(req.user._id);
+      console.log(`[Library] Deleted stale indexing file "${libraryFile.filename}" (no active task).`);
+      return res.json({ success: true, cancelled: true });
     }
 
     await LibraryChunk.deleteMany({ libraryFileId: libraryFile._id });

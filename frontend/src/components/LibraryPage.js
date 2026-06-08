@@ -107,9 +107,13 @@ function LibraryPage() {
     if (cancelUpload) cancelUpload();
   }
 
-  async function handleDelete(id, filename) {
+  async function handleDelete(id, filename, status) {
 
-    if (!window.confirm(`Delete "${filename}" from your library?`)) return;
+    const confirmMsg = status === 'indexing'
+      ? `Cancel indexing of "${filename}"? The partial upload will be removed.`
+      : `Delete "${filename}" from your library?`;
+
+    if (!window.confirm(confirmMsg)) return;
 
     const result = await deleteLibraryFile(id);
 
@@ -242,8 +246,8 @@ function LibraryPage() {
                   <td>
                     <button
                       className="library-delete-btn"
-                      onClick={() => handleDelete(file._id, file.filename)}
-                      title="Delete this file"
+                      onClick={() => handleDelete(file._id, file.filename, file.status)}
+                      title={file.status === 'indexing' ? 'Cancel indexing' : 'Delete this file'}
                     >
                       <X size={16} />
                     </button>

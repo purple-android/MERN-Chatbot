@@ -27,7 +27,11 @@ const { clearUserCache } = require('../utils/cache');
 const { Worker } = require('worker_threads');
 const path       = require('path');
 
-const WORKER_POOL_SIZE = parseInt(process.env.WORKER_POOL_SIZE) || 3;
+// One worker by default. A single document indexes its batches sequentially, so it
+// only ever uses ONE worker at a time — extra workers just sit idle while each loads
+// its own full copy of the embedding model (wasted memory). More workers only help
+// when several documents index concurrently; raise WORKER_POOL_SIZE if you need that.
+const WORKER_POOL_SIZE = parseInt(process.env.WORKER_POOL_SIZE) || 1;
 const WORKER_PATH      = path.join(__dirname, '..', 'workers', 'embedWorker.js');
 const workerPool       = [];
 let   indexQueue       = null;
@@ -396,7 +400,7 @@ async function embedAndSaveChunks(libraryFile, text, cancelToken) {
   console.log(`[RAG] ✅ Indexing complete for "${libraryFile.filename}".`);
 }
 
-async function indexDocument(text, userId, filename, size, cancelToken) {
+async function indexDocument(text, userId, filename, size, cancelToken, onCreate) {
 
   if (!isEmbedderReady()) {
     throw new Error('Embedder is not ready yet — try again in a moment.');
@@ -420,6 +424,13 @@ async function indexDocument(text, userId, filename, size, cancelToken) {
   });
 
   console.log(`[RAG] Starting indexing for "${filename}" (LibraryFile _id: ${libraryFile._id})`);
+
+  // Let the caller know the file now exists in the DB (with its _id), so it can
+  // register a way to cancel this indexing job by file id — needed when the user
+  // navigates away and comes back, losing the original upload's cancel handle.
+  if (typeof onCreate === 'function') {
+    try { onCreate(libraryFile); } catch (e) { /* registration is best-effort */ }
+  }
 
   try {
     await embedAndSaveChunks(libraryFile, text, cancelToken);
