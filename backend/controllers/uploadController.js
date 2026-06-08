@@ -1,117 +1,63 @@
+// uploadController.js
+// Extracts plain text from an uploaded document (PDF / DOCX / DOC / TXT).
+//
+// The actual extraction is CPU-bound and largely synchronous (mupdf PDF parsing +
+// image rendering, mammoth / word-extractor parsing), so it runs in a WORKER THREAD
+// (workers/extractWorker.js) instead of on the main thread. That keeps the event
+// loop free — one slow/huge file no longer freezes the server for every other user,
+// and multiple uploads can extract in parallel.
+
 const path = require('path');
-const pdfParse = require('pdf-parse');
-const Tesseract = require('tesseract.js');
-const mammoth = require('mammoth');
-const WordExtractor = require('word-extractor');
+const { Worker } = require('worker_threads');
 
-// Skip OCRing embedded images smaller than this (in PDF points). Tiny images are
-// usually logos/icons/lines — OCRing them wastes time and produces junk.
-const MIN_IMAGE_DIM = 40;
+const EXTRACT_WORKER_PATH = path.join(__dirname, '..', 'workers', 'extractWorker.js');
 
-async function extractTextFromPdf(buffer) {
+// ── extractTextFromFile ──
+// Shared helper used by both /api/upload (chat attachment) and /api/library/upload.
+// Spawns a fresh extraction worker, hands it the file bytes, and resolves with the
+// extracted text (or rejects with the worker's error). The worker is terminated as
+// soon as it answers.
+//
+// 'buffer'       — raw file bytes (a Node.js Buffer from multer)
+// 'originalname' — the uploaded filename (used to detect the extension)
+function extractTextFromFile(buffer, originalname) {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(EXTRACT_WORKER_PATH);
+    let settled = false;
 
-  const mupdf = await import('mupdf');
+    const finish = (fn, arg) => {
+      if (settled) return;
+      settled = true;
+      worker.terminate();
+      fn(arg);
+    };
 
-  const doc = mupdf.Document.openDocument(new Uint8Array(buffer), 'application/pdf');
+    worker.on('message', (msg) => {
+      if (msg.type === 'result')      finish(resolve, msg.text);
+      else if (msg.type === 'error')  finish(reject, new Error(msg.message));
+    });
+    worker.on('error', (err) => finish(reject, err));
+    worker.on('exit', (code) => {
+      if (!settled) {
+        finish(reject, new Error(`Extraction worker stopped unexpectedly (exit code ${code}).`));
+      }
+    });
 
-  const pageCount = doc.countPages();
-  let fullText = '';
-
-  for (let i = 0; i < pageCount; i++) {
-
-    const page = doc.loadPage(i);
-
-    let stext;
-    try {
-      stext = page.toStructuredText('preserve-images');
-    } catch (e) {
-      page.destroy?.();
-      continue;
-    }
-
-    const pageText = (stext.asText() || '').trim();
-
-    const imagePngs = [];
-    try {
-      stext.walk({
-        onImageBlock(bbox, transform, image) {
-          const width  = bbox[2] - bbox[0];
-          const height = bbox[3] - bbox[1];
-          if (width < MIN_IMAGE_DIM || height < MIN_IMAGE_DIM) return;
-          try {
-            const pixmap = image.toPixmap();
-            imagePngs.push(Buffer.from(pixmap.asPNG()));
-            pixmap.destroy?.();
-          } catch (imgErr) { /* skip this image */ }
-        }
-      });
-    } catch (walkErr) { /* keep whatever pageText we got */ }
-
-    stext.destroy?.();
-    page.destroy?.();
-
-    let imageText = '';
-    for (const png of imagePngs) {
-      try {
-        const { data: { text } } = await Tesseract.recognize(png, 'eng', {
-          logger: () => {}
-        });
-        const trimmed = (text || '').trim();
-        if (trimmed) imageText += trimmed + '\n';
-      } catch (ocrErr) { /* skip this image */ }
-    }
-
-    if (pageText)  fullText += pageText + '\n';
-    if (imageText) fullText += imageText + '\n';
-  }
-
-  fullText = fullText.trim();
-
-  if (!fullText) {
-    try {
-      const result = await pdfParse(buffer);
-      fullText = (result.text || '').trim();
-    } catch (e) { /* leave empty */ }
-  }
-
-  return fullText;
+    // Copy the bytes into a standalone ArrayBuffer we can TRANSFER to the worker
+    // (zero-copy handoff). We copy rather than transfer multer's own buffer because
+    // its memory may be pooled/shared with other allocations — transferring that
+    // could corrupt unrelated data.
+    const copy = new Uint8Array(buffer.length);
+    copy.set(buffer);
+    worker.postMessage(
+      { type: 'extract', buffer: copy.buffer, originalname },
+      [copy.buffer]
+    );
+  });
 }
 
-async function extractTextFromFile(buffer, originalname) {
-
-  const ext = path.extname(originalname).toLowerCase();
-
-  let text = '';
-
-  if (ext === '.txt') {
-    text = buffer.toString('utf-8');
-
-  } else if (ext === '.pdf') {
-
-    text = await extractTextFromPdf(buffer);
-
-  } else if (ext === '.docx') {
-    const result = await mammoth.extractRawText({ buffer });
-    text = result.value;
-
-  } else if (ext === '.doc') {
-    const extractor = new WordExtractor();
-    const doc = await extractor.extract(buffer);
-    text = doc.getBody();
-
-  } else {
-    throw new Error(`Unsupported file type: ${ext}`);
-  }
-
-  text = text.trim();
-
-  if (!text) {
-    throw new Error('No text could be extracted. The file may be empty or contain only non-readable images.');
-  }
-
-  return text;
-}
-
+// ── extractText ──
+// Handles: POST /api/upload (the chat-attachment endpoint).
 const extractText = async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No file was uploaded' });
