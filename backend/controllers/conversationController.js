@@ -4,11 +4,10 @@ const LibraryChunk = require('../models/LibraryChunk');
 const { retrieveChunks } = require('./ragController');
 const { getCachedChunks, setCachedChunks } = require('../utils/cache');
 
-const Groq = require('groq-sdk');
+const { createChatCompletion } = require('../utils/llm');
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 // const MAX_MESSAGE_LENGTH = 1500;
-const MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct';
+// The model is chosen inside utils/llm.js: local Ollama model first, Groq llama-4 fallback.
 const DAILY_REQUEST_LIMIT = 1000;       // 1,000 requests per day on the free tier
 const DAILY_TOKEN_LIMIT   = 500000;     // 500,000 tokens per day on the free tier
 const MAX_HISTORY_MESSAGES = 10;
@@ -167,56 +166,41 @@ const sendMessage = async (req, res) => {
       ? [systemPromptForRAG, ...historyForAI, currentForAI]
       : [...historyForAI, currentForAI];
 
-    // ── Call the Groq AI with a timeout ──
+    // ── Call the AI (local model first, Groq fallback) with a timeout ──
     const controller = new AbortController();
     const timeoutTimer = setTimeout(() => controller.abort(), AI_TIMEOUT_MS);
 
     let aiData;
     try {
-      const { data, response: httpResp } = await groq.chat.completions.create(
-        {
-          model:      MODEL,
-          max_tokens: 2048,
-          messages:   messagesForAI
-        },
-        { signal: controller.signal }
-      ).withResponse();
-      
+      const { data, httpResp, source } = await createChatCompletion({
+        messages:   messagesForAI,
+        max_tokens: 2048,
+        signal:     controller.signal
+      });
+
       aiData = data;
 
-      // ── Log how many tokens this request used ──
-      // data.usage is included by Groq in every response (NOT built-in — Groq adds it)
-      // prompt_tokens     — tokens used by all the messages we sent (history + current message)
-      // completion_tokens — tokens used by the AI's reply
-      // total_tokens      — prompt + completion combined
+      // data.usage — token counts. Both Ollama and Groq include this.
       const u = data.usage;
 
-      // ── Read the rate-limit headers Groq adds to every response ──
-      // httpResp.headers.get() — BUILT-IN method to read one HTTP header by name.
-      // These headers are PER-MINUTE only — Groq does NOT include daily counters.
-      //
-      // x-ratelimit-remaining-requests  — requests we can still make this minute (RPM)
-      // x-ratelimit-limit-requests      — our total request limit per minute (RPM cap)
-      // x-ratelimit-remaining-tokens    — tokens we can still use this minute (TPM)
-      // x-ratelimit-limit-tokens        — our total token limit per minute (TPM cap)
-      // x-ratelimit-reset-requests      — time until the request counter resets (e.g. "44s")
-      // x-ratelimit-reset-tokens        — time until the token counter resets (e.g. "1.2s")      
-      const remReq   = httpResp.headers.get('x-ratelimit-remaining-requests');
-      const limReq   = httpResp.headers.get('x-ratelimit-limit-requests');
-      const remTok   = httpResp.headers.get('x-ratelimit-remaining-tokens');
-      const limTok   = httpResp.headers.get('x-ratelimit-limit-tokens');
-      const resetReq = httpResp.headers.get('x-ratelimit-reset-requests');
-      const resetTok = httpResp.headers.get('x-ratelimit-reset-tokens');
-
       console.log('[Chat] ───── Request stats ─────');
+      console.log(`[Chat] Answered by   — ${source.toUpperCase()}`);
       console.log(`[Chat] Token usage    — prompt: ${u?.prompt_tokens} | completion: ${u?.completion_tokens} | total: ${u?.total_tokens} tokens`);
-      console.log(`[Chat] Per-minute RPM — ${remReq}/${limReq} requests left (resets in ${resetReq})`);
-      console.log(`[Chat] Per-minute TPM — ${remTok}/${limTok} tokens left (resets in ${resetTok})`);
-      // Daily counters are NOT exposed in Groq response headers — we show the plan limits
-      // instead, with a hint about where to see live daily usage.
-      console.log(`[Chat] Per-day limit  — ${DAILY_REQUEST_LIMIT.toLocaleString()} requests/day | ${DAILY_TOKEN_LIMIT.toLocaleString()} tokens/day (live daily usage: https://console.groq.com/usage)`);
+
+      // Rate-limit headers only exist on the Groq response — the local model has none.
+      if (httpResp) {
+        const remReq   = httpResp.headers.get('x-ratelimit-remaining-requests');
+        const limReq   = httpResp.headers.get('x-ratelimit-limit-requests');
+        const remTok   = httpResp.headers.get('x-ratelimit-remaining-tokens');
+        const limTok   = httpResp.headers.get('x-ratelimit-limit-tokens');
+        const resetReq = httpResp.headers.get('x-ratelimit-reset-requests');
+        const resetTok = httpResp.headers.get('x-ratelimit-reset-tokens');
+        console.log(`[Chat] Per-minute RPM — ${remReq}/${limReq} requests left (resets in ${resetReq})`);
+        console.log(`[Chat] Per-minute TPM — ${remTok}/${limTok} tokens left (resets in ${resetTok})`);
+        console.log(`[Chat] Per-day limit  — ${DAILY_REQUEST_LIMIT.toLocaleString()} requests/day | ${DAILY_TOKEN_LIMIT.toLocaleString()} tokens/day (live daily usage: https://console.groq.com/usage)`);
+      }
       console.log('[Chat] ─────────────────────────');
-  
+
     } finally {
       clearTimeout(timeoutTimer);
     }
