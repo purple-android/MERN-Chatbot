@@ -1,3 +1,5 @@
+import { API_BASE, apiHeaders } from './config';
+
 function getToken() {
   return localStorage.getItem('token');
 }
@@ -13,12 +15,12 @@ const MAX_POLL_MS = 30 * 60 * 1000;       // give up after 30 minutes (safety ca
 export async function summarizeDocument(text) {
   try {
     // 1. Start the job — returns almost instantly with a jobId.
-    const startRes = await fetch('/api/summarize', {
+    const startRes = await fetch(`${API_BASE}/api/summarize`, {
       method: 'POST',
-      headers: {
+      headers: apiHeaders({
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${getToken()}`
-      },
+      }),
       body: JSON.stringify({ text })
     });
 
@@ -38,8 +40,8 @@ export async function summarizeDocument(text) {
 
       let job;
       try {
-        const res = await fetch(`/api/summarize/${jobId}`, {
-          headers: { 'Authorization': `Bearer ${getToken()}` }
+        const res = await fetch(`${API_BASE}/api/summarize/${jobId}`, {
+          headers: apiHeaders({ 'Authorization': `Bearer ${getToken()}` })
         });
         job = await res.json();
       } catch (e) {

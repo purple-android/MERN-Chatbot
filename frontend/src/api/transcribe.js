@@ -1,6 +1,8 @@
+import { API_BASE, apiHeaders } from './config';
+
 function getAuthHeader() {
   const token = localStorage.getItem('token');
-  return { Authorization: `Bearer ${token}` };
+  return apiHeaders({ Authorization: `Bearer ${token}` });
 }
 
 export async function transcribeAudio(file) {
@@ -9,7 +11,7 @@ export async function transcribeAudio(file) {
 
   formData.append('file', file);
 
-  const res = await fetch('/api/transcribe', {
+  const res = await fetch(`${API_BASE}/api/transcribe`, {
     method: 'POST',
 
     headers: getAuthHeader(),

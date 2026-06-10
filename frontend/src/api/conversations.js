@@ -1,8 +1,10 @@
-const BASE = '/api/conversations';
+import { API_BASE, apiHeaders } from './config';
+
+const BASE = `${API_BASE}/api/conversations`;
 
 function getAuthHeader() {
   const token = localStorage.getItem('token');
-  return { Authorization: `Bearer ${token}` };
+  return apiHeaders({ Authorization: `Bearer ${token}` });
 }
 
 export async function getAllConversations() {

@@ -1,10 +1,11 @@
+import { API_BASE, apiHeaders } from './config';
 
-const BASE = '/api/auth';
+const BASE = `${API_BASE}/api/auth`;
 
 export async function register(username, email, password) {
   const res = await fetch(`${BASE}/register`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: apiHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ username, email, password })
   });
   return res.json();
@@ -13,7 +14,7 @@ export async function register(username, email, password) {
 export async function login(email, password) {
   const res = await fetch(`${BASE}/login`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: apiHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ email, password })
   });
   return res.json();
@@ -21,7 +22,7 @@ export async function login(email, password) {
 
 export async function getMe(token) {
   const res = await fetch(`${BASE}/me`, {
-    headers: { Authorization: `Bearer ${token}` }
+    headers: apiHeaders({ Authorization: `Bearer ${token}` })
   });
   return res.json();
 }

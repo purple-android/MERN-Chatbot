@@ -1,11 +1,13 @@
+import { API_BASE, apiHeaders } from './config';
+
 function getAuthHeader() {
   const token = localStorage.getItem('token');
-  return { Authorization: `Bearer ${token}` };
+  return apiHeaders({ Authorization: `Bearer ${token}` });
 }
 
 export async function listLibraryFiles() {
   try {
-    const res = await fetch('/api/library', { headers: getAuthHeader() });
+    const res = await fetch(`${API_BASE}/api/library`, { headers: getAuthHeader() });
     return res.json();
   } catch (err) {
     return { error: 'Could not reach the server.' };
@@ -14,7 +16,7 @@ export async function listLibraryFiles() {
 
 export async function deleteLibraryFile(id) {
   try {
-    const res = await fetch(`/api/library/${id}`, {
+    const res = await fetch(`${API_BASE}/api/library/${id}`, {
       method: 'DELETE',
       headers: getAuthHeader()
     });
@@ -65,16 +67,17 @@ export function uploadLibraryFile(file, onProgress, onCancelReady) {
       resolve({ cancelled: true });
     });
 
-    xhr.open('POST', '/api/library/upload');
+    xhr.open('POST', `${API_BASE}/api/library/upload`);
     xhr.setRequestHeader('Authorization', `Bearer ${localStorage.getItem('token')}`);
+    xhr.setRequestHeader('ngrok-skip-browser-warning', 'true');
     xhr.send(formData);
 
     if (onCancelReady) {
       onCancelReady(async () => {
         try {
-          await fetch(`/api/library/cancel/${uploadId}`, {
+          await fetch(`${API_BASE}/api/library/cancel/${uploadId}`, {
             method:  'POST',
-            headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+            headers: apiHeaders({ Authorization: `Bearer ${localStorage.getItem('token')}` })
           });
         } catch (e) {
           // best effort
