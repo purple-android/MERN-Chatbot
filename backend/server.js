@@ -83,9 +83,24 @@ async function connectToMongo() {
   return 'CLOUD';
 }
 
+const SummaryJob = require('./models/SummaryJob');
+
 connectToMongo()
   .then(async (which) => {
     console.log(`Connected to MongoDB (${which})`);
+
+    // Any summary job still 'processing' was running in-process when the server
+    // last stopped — that work died with the process and can't continue, so mark
+    // these failed (otherwise the frontend would poll them forever).
+    try {
+      const r = await SummaryJob.updateMany(
+        { status: 'processing' },
+        { status: 'failed', error: 'The server restarted while this summary was in progress. Please try again.' }
+      );
+      if (r.modifiedCount) console.log(`[Summarize] Marked ${r.modifiedCount} interrupted job(s) as failed.`);
+    } catch (e) {
+      console.error('[Summarize] Could not clean up interrupted jobs:', e.message);
+    }
 
     try {
       await loadEmbedder();
