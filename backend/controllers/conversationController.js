@@ -4,7 +4,7 @@ const LibraryChunk = require('../models/LibraryChunk');
 const { retrieveChunks } = require('./ragController');
 const { getCachedChunks, setCachedChunks } = require('../utils/cache');
 
-const { createChatCompletion } = require('../utils/llm');
+const { createChatCompletion, streamChatCompletion } = require('../utils/llm');
 
 // const MAX_MESSAGE_LENGTH = 1500;
 // The model is chosen inside utils/llm.js: local Ollama model first, Groq llama-4 fallback.
@@ -63,6 +63,106 @@ const createConversation = async (req, res) => {
 };
 
 
+// ── buildChatContext ──
+// Shared by the HTTP sendMessage and the streaming socket handler.
+// Pushes the user's message onto the conversation, sets the title on the first message,
+// trims history + current message to the token budget, runs RAG retrieval (with cache),
+// and returns the message array to send to the AI plus the RAG sources for the reply.
+// NOTE: it mutates `conversation` (pushes the user message) but does NOT save — the
+// caller saves after appending the assistant reply.
+async function buildChatContext(conversation, content, useLibrary, userId) {
+  conversation.messages.push({ role: 'user', content });
+
+  if (conversation.messages.length === 1) {
+    conversation.title = content.slice(0, 50);
+  }
+
+  const lastIndex = conversation.messages.length - 1;
+  const historyMessages = conversation.messages.slice(
+    Math.max(0, lastIndex - MAX_HISTORY_MESSAGES),
+    lastIndex
+  );
+
+  const historyForAI = historyMessages.map(m => {
+    if (m.content.length > MAX_HISTORY_MESSAGE_LENGTH) {
+      return {
+        role:    m.role,
+        content: m.content.slice(0, MAX_HISTORY_MESSAGE_LENGTH) +
+                 '\n\n[Note: this message was trimmed because it was too long.]'
+      };
+    }
+    return { role: m.role, content: m.content };
+  });
+
+  const currentMsg = conversation.messages[lastIndex];
+  const currentForAI = {
+    role: currentMsg.role,
+    content: currentMsg.content.length > MAX_CURRENT_MESSAGE_LENGTH
+      ? currentMsg.content.slice(0, MAX_CURRENT_MESSAGE_LENGTH) +
+      '\n\n[Note: your message was automatically trimmed because it exceeded the 80,000-character limit.]'
+      : currentMsg.content
+  };
+
+  // ── RAG: consult the user's library if they have one ──
+  let systemPromptForRAG = null;
+  let sourcesForReply    = [];
+
+  const libraryChunkCount = useLibrary
+    ? await LibraryChunk.countDocuments({ userId })
+    : 0;
+
+  if (!useLibrary) {
+    console.log('[Chat] Library toggle is OFF — skipping RAG for this message.');
+  }
+
+  if (libraryChunkCount > 0) {
+    try {
+      let chunks = await getCachedChunks(userId, currentMsg.content);
+
+      if (chunks) {
+        console.log('[Chat] RAG cache HIT — reusing saved search result.');
+      } else {
+        chunks = await retrieveChunks(currentMsg.content, userId, 5);
+        await setCachedChunks(userId, currentMsg.content, chunks);
+      }
+
+      if (chunks.length > 0) {
+        const contextBlock = chunks
+          .map((c, idx) => `[Excerpt ${idx + 1}] from "${c.filename}":\n${c.text}`)
+          .join('\n\n---\n\n');
+
+        systemPromptForRAG = {
+          role: 'system',
+          content:
+            'You are a helpful assistant. The user has a personal library of documents. ' +
+            'Below are excerpts from those documents that may be relevant to the user\'s question. ' +
+            'If they answer the question, use them and mention which file you got the info from. ' +
+            'If they DO NOT answer the question, just answer normally from your own knowledge ' +
+            'and do not force the excerpts in.\n\n' +
+            '--- DOCUMENT EXCERPTS ---\n\n' +
+            contextBlock
+        };
+
+        sourcesForReply = chunks.map(c => ({
+          filename:   c.filename,
+          chunkIndex: c.chunkIndex
+        }));
+
+        console.log(`[Chat] RAG enabled — using ${chunks.length} chunks from the user's library.`);
+      }
+    } catch (ragErr) {
+      console.error('[Chat] RAG retrieval failed, falling back to no-RAG:', ragErr.message);
+    }
+  }
+
+  const messagesForAI = systemPromptForRAG
+    ? [systemPromptForRAG, ...historyForAI, currentForAI]
+    : [...historyForAI, currentForAI];
+
+  return { messagesForAI, sourcesForReply };
+}
+
+
 // ── sendMessage ──
 const sendMessage = async (req, res) => {
   try {
@@ -75,96 +175,9 @@ const sendMessage = async (req, res) => {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    conversation.messages.push({ role: 'user', content });
-
-    if (conversation.messages.length === 1) {
-      conversation.title = content.slice(0, 50);
-    }
-
-    const lastIndex = conversation.messages.length - 1;
-    const historyMessages = conversation.messages.slice(
-      Math.max(0, lastIndex - MAX_HISTORY_MESSAGES),
-      lastIndex
+    const { messagesForAI, sourcesForReply } = await buildChatContext(
+      conversation, content, useLibrary, req.user._id
     );
-    
-    const historyForAI = historyMessages.map(m => {
-      // Check if the message exceeds the character cap
-      if (m.content.length > MAX_HISTORY_MESSAGE_LENGTH) {
-        return {
-          role:    m.role,
-          content: m.content.slice(0, MAX_HISTORY_MESSAGE_LENGTH) +
-                   '\n\n[Note: this message was trimmed because it was too long.]'
-        };
-      }
-      return { role: m.role, content: m.content };
-    });
-
-    const currentMsg = conversation.messages[lastIndex];
-    const currentForAI = {
-      role: currentMsg.role,
-      content: currentMsg.content.length > MAX_CURRENT_MESSAGE_LENGTH
-        ? currentMsg.content.slice(0, MAX_CURRENT_MESSAGE_LENGTH) +
-        '\n\n[Note: your message was automatically trimmed because it exceeded the 80,000-character limit.]'
-        : currentMsg.content
-    };
-
-    // ── RAG (Phase 4): consult the user's library if they have one ──
-    let systemPromptForRAG = null;
-    let sourcesForReply    = [];
-
-    const libraryChunkCount = useLibrary
-      ? await LibraryChunk.countDocuments({ userId: req.user._id })
-      : 0;
-
-    if (!useLibrary) {
-      // User explicitly turned the library toggle OFF — don't search, don't embed.
-      // The chat will run with normal LLM behaviour, no document context.
-      console.log('[Chat] Library toggle is OFF — skipping RAG for this message.');
-    }
-
-    if (libraryChunkCount > 0) {
-      try {
-        let chunks = await getCachedChunks(req.user._id, currentMsg.content);
-
-        if (chunks) {
-          console.log('[Chat] RAG cache HIT — reusing saved search result.');
-        } else {
-          chunks = await retrieveChunks(currentMsg.content, req.user._id, 5);
-          await setCachedChunks(req.user._id, currentMsg.content, chunks);
-        }
-
-        if (chunks.length > 0) {
-          const contextBlock = chunks
-            .map((c, idx) => `[Excerpt ${idx + 1}] from "${c.filename}":\n${c.text}`)
-            .join('\n\n---\n\n');
-
-          systemPromptForRAG = {
-            role: 'system',
-            content:
-              'You are a helpful assistant. The user has a personal library of documents. ' +
-              'Below are excerpts from those documents that may be relevant to the user\'s question. ' +
-              'If they answer the question, use them and mention which file you got the info from. ' +
-              'If they DO NOT answer the question, just answer normally from your own knowledge ' +
-              'and do not force the excerpts in.\n\n' +
-              '--- DOCUMENT EXCERPTS ---\n\n' +
-              contextBlock
-          };
-
-          sourcesForReply = chunks.map(c => ({
-            filename:   c.filename,
-            chunkIndex: c.chunkIndex
-          }));
-
-          console.log(`[Chat] RAG enabled — using ${chunks.length} chunks from the user's library.`);
-        }
-      } catch (ragErr) {
-        console.error('[Chat] RAG retrieval failed, falling back to no-RAG:', ragErr.message);
-      }
-    }
-
-    const messagesForAI = systemPromptForRAG
-      ? [systemPromptForRAG, ...historyForAI, currentForAI]
-      : [...historyForAI, currentForAI];
 
     // ── Call the AI (local model first, Groq fallback) with a timeout ──
     const controller = new AbortController();
@@ -283,10 +296,84 @@ const deleteConversation = async (req, res) => {
   }
 };
 
+// ── handleStreamingMessage ──
+// Socket.IO handler that streams a chat reply token-by-token.
+// payload: { conversationId, content, useLibrary }
+// Emits:
+//   • 'chat:token' — each new piece of text as it's generated
+//   • 'chat:done'  — { content, sources, conversationId } when finished (also saved to DB)
+//   • 'chat:error' — { error } if something fails
+// socket.userId is set by the auth middleware in server.js.
+async function handleStreamingMessage(socket, payload = {}) {
+  const { conversationId, content, useLibrary = true } = payload;
+
+  try {
+    if (!content || !content.trim()) {
+      return socket.emit('chat:error', { error: 'Message is empty.' });
+    }
+
+    const conversation = await Conversation.findById(conversationId);
+    if (!conversation) {
+      return socket.emit('chat:error', { error: 'Conversation not found' });
+    }
+    if (conversation.userId.toString() !== socket.userId.toString()) {
+      return socket.emit('chat:error', { error: 'Access denied' });
+    }
+
+    const { messagesForAI, sourcesForReply } = await buildChatContext(
+      conversation, content, useLibrary, socket.userId
+    );
+
+    const controller = new AbortController();
+    const timeoutTimer = setTimeout(() => controller.abort(), AI_TIMEOUT_MS);
+
+    let result;
+    try {
+      result = await streamChatCompletion({
+        messages:   messagesForAI,
+        max_tokens: 2048,
+        signal:     controller.signal,
+        onToken:    (piece) => socket.emit('chat:token', piece)
+      });
+    } finally {
+      clearTimeout(timeoutTimer);
+    }
+
+    console.log(`[Chat] (stream) Answered by ${result.source.toUpperCase()} — ${result.full.length} chars.`);
+
+    conversation.messages.push({
+      role:    'assistant',
+      content: result.full,
+      sources: sourcesForReply
+    });
+    await conversation.save();
+
+    socket.emit('chat:done', {
+      content:        result.full,
+      sources:        sourcesForReply,
+      conversationId: conversation._id
+    });
+
+  } catch (err) {
+    console.error('[Chat] (stream) error:', err.message);
+
+    let message = 'Failed to get AI response. Please try again.';
+    if (err.name === 'AbortError') {
+      message = 'The AI took longer than 10 minutes to respond. Please try again, or summarize your document first.';
+    } else if (err.status === 429) {
+      const waitMatch = err.message?.match(/please try again in ([^\."]+)/i);
+      const waitTime  = waitMatch ? waitMatch[1].trim() : null;
+      message = `You've reached the AI usage limit for now.${waitTime ? ` Please try again in ${waitTime}.` : ' Please wait a few minutes before trying again.'}`;
+    }
+    socket.emit('chat:error', { error: message });
+  }
+}
+
 module.exports = {
   getAllConversations,
   getConversation,
   createConversation,
   sendMessage,
-  deleteConversation
+  deleteConversation,
+  handleStreamingMessage
 };

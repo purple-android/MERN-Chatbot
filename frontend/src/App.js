@@ -22,6 +22,7 @@ import { getMe } from './api/auth';
 import { uploadDocument } from './api/upload';
 import { transcribeAudio } from './api/transcribe';
 import { summarizeDocument } from './api/summarize';
+import { getSocket, resetSocket } from './api/socket';
 
 // ── App Component — the main function that builds the whole app ──
 function App() {
@@ -129,6 +130,7 @@ function App() {
 
   // ── handleLogout — logs the user out and resets everything to a blank state ──
   function handleLogout() {
+    resetSocket();
     localStorage.removeItem('token');
     setUser(null);
     setConversations([]);
@@ -166,6 +168,52 @@ function App() {
     setMessages([]);
     setInput('');
     setSidebarOpen(false);
+  }
+
+  // ── streamChat — sends one message over the socket and fills the (already-added,
+  // empty) assistant bubble as tokens stream in. Resolves on done or error.
+  function streamChat(conversationId, content, useLibrary) {
+    return new Promise((resolve) => {
+      const socket = getSocket();
+
+      const onToken = (piece) => {
+        setMessages(prev => {
+          const copy = [...prev];
+          const last = copy[copy.length - 1];
+          copy[copy.length - 1] = { ...last, content: last.content + piece };
+          return copy;
+        });
+      };
+      const onDone = ({ sources }) => {
+        cleanup();
+        setMessages(prev => {
+          const copy = [...prev];
+          const last = copy[copy.length - 1];
+          copy[copy.length - 1] = { ...last, sources: sources || [] };
+          return copy;
+        });
+        resolve();
+      };
+      const onError = ({ error }) => {
+        cleanup();
+        setMessages(prev => {
+          const copy = [...prev];
+          copy[copy.length - 1] = { role: 'assistant', content: `⚠️ ${error}` };
+          return copy;
+        });
+        resolve();
+      };
+      function cleanup() {
+        socket.off('chat:token', onToken);
+        socket.off('chat:done', onDone);
+        socket.off('chat:error', onError);
+      }
+
+      socket.on('chat:token', onToken);
+      socket.on('chat:done', onDone);
+      socket.on('chat:error', onError);
+      socket.emit('chat:send', { conversationId, content, useLibrary });
+    });
   }
 
   // ── sendMessage — sends the user's message and adds Llama's reply to the screen ──
@@ -263,35 +311,16 @@ function App() {
       setMessages(prev => [...prev, { role: 'user', content: displayText }]);
     }    
     
-    // Send the full content (including document text if any) to the backend
-    // We wrap in try-catch so a network failure (Wi-Fi drops, server down, etc.)
-    // shows an error bubble instead of silently crashing
-    let data;
-    try {
-      data = await api.sendMessage(activeId, contentToSend, useLibrary);
-    } catch (err) {
-      // Network-level failure (could not even reach the server)
-      setLoading(false);
-      setMessages(prev => [...prev, {
-        role: 'assistant',
-        content: '⚠️ Could not reach the server. Please check your connection and try again.'
-      }]);
-      return;
-    }
+    // Add an empty assistant bubble that streamChat fills in as tokens arrive.
+    setMessages(prev => [...prev, { role: 'assistant', content: '', sources: [] }]);
+
+    // Stream the reply over the socket. Resolves when the reply finishes (or errors,
+    // in which case the bubble is replaced with an error message inside streamChat).
+    await streamChat(activeId, contentToSend, useLibrary);
 
     setLoading(false);
 
-    if (data.error) {
-      setMessages(prev => [...prev, { role: 'assistant', content: `⚠️ ${data.error}` }]);
-      return;
-    }
-    
-    setMessages(prev => [...prev, {
-      role:    'assistant',
-      content: data.reply,
-      sources: data.sources || []
-    }]);
-    
+    // Refresh the sidebar (the title may have been set from the first message).
     api.getAllConversations().then(setConversations);
   }
 

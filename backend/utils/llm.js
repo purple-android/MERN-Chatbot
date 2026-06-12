@@ -61,4 +61,84 @@ async function createChatCompletion({ messages, max_tokens, signal }) {
   }
 }
 
-module.exports = { createChatCompletion, GROQ_MODEL };
+// ── streamLocal ──
+// Streams a reply from the local Ollama model. Ollama's OpenAI-compatible endpoint
+// returns Server-Sent Events (lines of `data: {json}`); we parse each delta and hand
+// the new text to onToken. Returns the full accumulated text.
+async function streamLocal({ messages, max_tokens, signal, onToken }) {
+  const baseUrl = process.env.LOCAL_LLM_URL   || 'http://localhost:11434/v1';
+  const model   = process.env.LOCAL_LLM_MODEL || 'gemma3:270m';
+
+  const res = await fetch(`${baseUrl}/chat/completions`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ model, messages, max_tokens, stream: true }),
+    signal
+  });
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`Local model HTTP ${res.status}: ${body.slice(0, 200)}`);
+  }
+
+  const reader  = res.body.getReader();
+  const decoder = new TextDecoder();
+  let full = '';
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop();   // keep the last (possibly incomplete) line for next round
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('data:')) continue;
+      const payload = trimmed.slice(5).trim();
+      if (payload === '[DONE]') continue;
+      try {
+        const json  = JSON.parse(payload);
+        const piece = json.choices?.[0]?.delta?.content || '';
+        if (piece) { full += piece; onToken(piece); }
+      } catch { /* ignore keep-alive / partial lines */ }
+    }
+  }
+
+  return { full, source: 'local' };
+}
+
+// ── streamGroq ──
+// Streams a reply from Groq via groq-sdk (its create({stream:true}) returns an async
+// iterable of chunks). Same onToken contract; returns the full accumulated text.
+async function streamGroq({ messages, max_tokens, signal, onToken }) {
+  const stream = await groq.chat.completions.create(
+    { model: GROQ_MODEL, max_tokens, messages, stream: true },
+    { signal }
+  );
+
+  let full = '';
+  for await (const chunk of stream) {
+    const piece = chunk.choices?.[0]?.delta?.content || '';
+    if (piece) { full += piece; onToken(piece); }
+  }
+
+  return { full, source: 'groq' };
+}
+
+// ── streamChatCompletion ──
+// Streaming version of createChatCompletion: local model first, Groq fallback.
+// Calls onToken(piece) for each new bit of text, and resolves with { full, source }.
+async function streamChatCompletion({ messages, max_tokens, signal, onToken }) {
+  try {
+    return await streamLocal({ messages, max_tokens, signal, onToken });
+  } catch (localErr) {
+    if (localErr.name === 'AbortError') throw localErr;
+    console.warn('[LLM] Local model unavailable for streaming:', localErr.message, '— falling back to Groq.');
+    return await streamGroq({ messages, max_tokens, signal, onToken });
+  }
+}
+
+module.exports = { createChatCompletion, streamChatCompletion, GROQ_MODEL };

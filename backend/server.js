@@ -22,6 +22,11 @@ const libraryRoutes = require('./routes/libraryRoutes');
 
 const { loadEmbedder, resumeUnfinishedIndexing } = require('./controllers/ragController');
 
+const http = require('http');
+const { Server } = require('socket.io');
+const jwt = require('jsonwebtoken');
+const { handleStreamingMessage } = require('./controllers/conversationController');
+
 const app = express();
 
 app.use(cors());
@@ -85,6 +90,29 @@ async function connectToMongo() {
 
 const SummaryJob = require('./models/SummaryJob');
 
+// ── Socket.IO: real-time streaming chat ──
+// We wrap the Express app in an HTTP server so Socket.IO can share the same port.
+const server = http.createServer(app);
+const io = new Server(server, { cors: { origin: '*' } });
+
+// Authenticate each socket connection with the same JWT used by the REST routes.
+// The client sends the token in the handshake auth (see frontend api/socket.js).
+io.use((socket, next) => {
+  const token = socket.handshake.auth && socket.handshake.auth.token;
+  if (!token) return next(new Error('Not authorized'));
+  try {
+    socket.userId = jwt.verify(token, process.env.SECRET).id;
+    next();
+  } catch {
+    next(new Error('Invalid or expired token'));
+  }
+});
+
+io.on('connection', (socket) => {
+  // Stream a chat reply token-by-token. The handler emits 'chat:token' / 'chat:done' / 'chat:error'.
+  socket.on('chat:send', (payload) => handleStreamingMessage(socket, payload));
+});
+
 connectToMongo()
   .then(async (which) => {
     console.log(`Connected to MongoDB (${which})`);
@@ -113,7 +141,7 @@ connectToMongo()
       console.error('[RAG] Server will still start, but Library / RAG features will not work until this is fixed.');
     }
 
-    app.listen(process.env.PORT || 4000, () => {
+    server.listen(process.env.PORT || 4000, () => {
       console.log('Server running on port', process.env.PORT || 4000);
     });
   })
