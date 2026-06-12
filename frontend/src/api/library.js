@@ -47,7 +47,9 @@ export function uploadLibraryFile(file, onProgress, onCancelReady) {
 
     xhr.upload.addEventListener('load', () => {
       if (onProgress) {
-        onProgress({ phase: 'indexing', percent: 100 });
+        // Bytes are uploaded; the server now extracts + indexes. Start the indexing bar
+        // at 0% — the live 'library:progress' socket events drive it up from here.
+        onProgress({ phase: 'indexing', percent: 0 });
       }
     });
 

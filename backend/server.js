@@ -95,6 +95,9 @@ const SummaryJob = require('./models/SummaryJob');
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
 
+// Make `io` available to controllers (so they can push events like indexing progress).
+require('./utils/realtime').setIO(io);
+
 // Authenticate each socket connection with the same JWT used by the REST routes.
 // The client sends the token in the handshake auth (see frontend api/socket.js).
 io.use((socket, next) => {
@@ -109,6 +112,10 @@ io.use((socket, next) => {
 });
 
 io.on('connection', (socket) => {
+  // Join a room named after the user's id so the server can push events (chat tokens,
+  // library indexing progress) to all of this user's open tabs.
+  socket.join(String(socket.userId));
+
   // Stream a chat reply token-by-token. The handler emits 'chat:token' / 'chat:done' / 'chat:error'.
   socket.on('chat:send', (payload) => handleStreamingMessage(socket, payload));
 });

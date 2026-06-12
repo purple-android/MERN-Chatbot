@@ -3,6 +3,7 @@ const LibraryChunk = require('../models/LibraryChunk');
 const { extractTextFromFile } = require('./uploadController');
 const { indexDocument } = require('./ragController');
 const { clearUserCache } = require('../utils/cache');
+const { emitToUser } = require('../utils/realtime');
 
 // Cancel handles for in-progress uploads, keyed two ways:
 //   activeUploads        — by the client-generated uploadId (used by the live Cancel button)
@@ -46,6 +47,15 @@ const uploadFile = async (req, res) => {
         // can cancel this job by file id even after the original page is gone.
         registeredFileId = lf._id.toString();
         activeUploadsByFileId.set(registeredFileId, cancelToken);
+      },
+      // Live indexing progress → push to this user's browser over the socket.
+      (prog) => {
+        emitToUser(req.user._id, 'library:progress', {
+          libraryFileId: registeredFileId,
+          filename:      req.file.originalname,
+          done:          prog.done,
+          total:         prog.total
+        });
       }
     );
 

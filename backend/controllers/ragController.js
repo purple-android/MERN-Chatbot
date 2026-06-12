@@ -319,7 +319,13 @@ async function embedQuery(question) {
   return embedText(question, 'query');
 }
 
-async function embedAndSaveChunks(libraryFile, text, cancelToken) {
+async function embedAndSaveChunks(libraryFile, text, cancelToken, onProgress) {
+
+  const reportProgress = (done, total) => {
+    if (onProgress) {
+      try { onProgress({ done, total }); } catch (e) { /* progress is best-effort */ }
+    }
+  };
 
   const bailIfCancelled = async () => {
     if (cancelToken && cancelToken.cancelled) {
@@ -353,6 +359,9 @@ async function embedAndSaveChunks(libraryFile, text, cancelToken) {
   if (doneSet.size > 0) {
     console.log(`[RAG] Resuming "${libraryFile.filename}" — ${doneSet.size}/${chunks.length} chunks already saved.`);
   }
+
+  // Initial progress (so the bar starts at the right place, even on a resume).
+  reportProgress(doneSet.size, chunks.length);
 
   for (let start = 0; start < chunks.length; start += SAVE_BATCH_SIZE) {
 
@@ -390,6 +399,7 @@ async function embedAndSaveChunks(libraryFile, text, cancelToken) {
     await libraryFile.save();
 
     console.log(`[RAG] "${libraryFile.filename}": saved ${savedSoFar}/${chunks.length} chunks.`);
+    reportProgress(savedSoFar, chunks.length);
   }
 
   libraryFile.chunkCount = await LibraryChunk.countDocuments({ libraryFileId: libraryFile._id });
@@ -397,10 +407,12 @@ async function embedAndSaveChunks(libraryFile, text, cancelToken) {
   libraryFile.sourceText = undefined;
   await libraryFile.save();
 
+  reportProgress(libraryFile.chunkCount, chunks.length);
+
   console.log(`[RAG] ✅ Indexing complete for "${libraryFile.filename}".`);
 }
 
-async function indexDocument(text, userId, filename, size, cancelToken, onCreate) {
+async function indexDocument(text, userId, filename, size, cancelToken, onCreate, onProgress) {
 
   if (!isEmbedderReady()) {
     throw new Error('Embedder is not ready yet — try again in a moment.');
@@ -433,7 +445,7 @@ async function indexDocument(text, userId, filename, size, cancelToken, onCreate
   }
 
   try {
-    await embedAndSaveChunks(libraryFile, text, cancelToken);
+    await embedAndSaveChunks(libraryFile, text, cancelToken, onProgress);
   } catch (err) {
     if (!err.cancelled) {
       try {

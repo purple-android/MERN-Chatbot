@@ -8,6 +8,8 @@ import {
 
 import { BookOpen, Upload, FileText, X } from 'lucide-react';
 
+import { getSocket } from '../api/socket';
+
 function formatSize(bytes) {
 
   if (bytes < 1024) return `${bytes} B`;
@@ -31,6 +33,22 @@ function LibraryPage() {
 
   useEffect(() => {
     loadFiles();
+  }, []);
+
+  // Live indexing progress: the backend emits 'library:progress' over the socket as it
+  // embeds chunks. Update the current upload's bar with the real percent. (Uploads run
+  // one at a time, so any event applies to the upload currently in progress.)
+  useEffect(() => {
+    const socket = getSocket();
+    const onProgress = ({ done, total }) => {
+      setUploadStatus(prev => {
+        if (!prev) return prev;
+        const percent = total > 0 ? (done / total) * 100 : 0;
+        return { ...prev, phase: 'indexing', percent };
+      });
+    };
+    socket.on('library:progress', onProgress);
+    return () => socket.off('library:progress', onProgress);
   }, []);
 
   async function loadFiles() {
@@ -152,7 +170,7 @@ function LibraryPage() {
 
                 {uploadStatus.phase === 'uploading'
                   ? `Uploading… ${Math.round(uploadStatus.percent)}%`
-                  : 'Indexing on server — this can take a few minutes for large files…'}
+                  : `Indexing on server… ${Math.round(uploadStatus.percent || 0)}%`}
               </span>
             </div>
 
@@ -160,11 +178,7 @@ function LibraryPage() {
               <div
                 className={`progress-bar-fill ${uploadStatus.phase === 'indexing' ? 'indexing' : ''}`}
 
-                style={{
-                  width: uploadStatus.phase === 'uploading'
-                    ? `${uploadStatus.percent}%`
-                    : '100%'
-                }}
+                style={{ width: `${uploadStatus.percent || 0}%` }}
               />
             </div>
 
